@@ -15,14 +15,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from db.database import SessionLocal, init_db
 from db.models import Employee, EmailTemplate, Campaign, CampaignRecipient, ReminderJob, MessageLog
+from src.idempotency import generate_execution_key
 from src.config import DATA_DIR, TEMPLATES_DIR, OUTPUTS_DIR, CONTACTS_FILE, REMINDERS_FILE, REPORT_FILE
 from src.logger import logger
-
-
-def generate_execution_key(reminder_code: str, recipient_email: str, timestamp_str: str) -> str:
-    """Generates a deterministic idempotency hash for an execution instance."""
-    raw = f"{reminder_code.strip()}:{recipient_email.strip().lower()}:{timestamp_str.strip()}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
 def migrate_employees(session) -> int:

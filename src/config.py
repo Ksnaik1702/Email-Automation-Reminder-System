@@ -12,6 +12,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load .env if present
 load_dotenv(BASE_DIR / ".env")
 
+# Database Configuration
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(BASE_DIR / 'db' / 'email.db').as_posix()}")
+
 # SMTP Configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

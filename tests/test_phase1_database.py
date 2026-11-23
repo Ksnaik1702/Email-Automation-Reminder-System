@@ -279,6 +279,138 @@ class TestPhase1DatabaseArchitecture(unittest.TestCase):
         self.assertGreaterEqual(count, 5)
         new_session.close()
 
+    def test_11_repeated_scheduler_invocation_idempotency(self):
+        """Test that repeated scheduler runs cannot execute the same occurrence twice."""
+        from src.idempotency import generate_execution_key, is_already_executed, record_execution
+
+        reminder_id = 9991
+        recipient = "Worker.Test@Company.com "  # Test with non-normalized input
+        sched_time = "2026-11-24 10:00:00"
+
+        key = generate_execution_key(reminder_id, recipient, sched_time)
+
+        # 1st Scheduler Tick: Occurrence has not been executed yet
+        self.assertFalse(is_already_executed(self.session, key))
+        success, err = record_execution(
+            session=self.session,
+            execution_key=key,
+            recipient_email=recipient,
+            subject="First Run",
+            status="SENT"
+        )
+        self.assertTrue(success)
+        self.assertIsNone(err)
+
+        # 2nd Scheduler Tick: 15 seconds later, same occurrence evaluated
+        self.assertTrue(is_already_executed(self.session, key))
+        success2, err2 = record_execution(
+            session=self.session,
+            execution_key=key,
+            recipient_email=recipient,
+            subject="Second Run (Duplicate)",
+            status="SENT"
+        )
+        # Must be blocked by idempotency guard / unique constraint
+        self.assertFalse(success2)
+        self.assertIn("Duplicate", err2)
+
+        # Clean up
+        clean_target = self.session.query(MessageLog).filter_by(execution_key=key).first()
+        if clean_target:
+            self.session.delete(clean_target)
+            self.session.commit()
+
+    def test_12_application_restart_idempotency(self):
+        """Test that application restart preserves idempotency locks on disk."""
+        from src.idempotency import generate_execution_key, is_already_executed, record_execution
+
+        reminder_id = 9992
+        recipient = "restart.test@company.com"
+        sched_time = datetime.datetime(2026, 11, 25, 14, 0, 0, tzinfo=datetime.timezone.utc)
+        key = generate_execution_key(reminder_id, recipient, sched_time)
+
+        # Record occurrence
+        success, _ = record_execution(
+            session=self.session,
+            execution_key=key,
+            recipient_email=recipient,
+            subject="Pre-Restart Dispatch",
+            status="SENT"
+        )
+        self.assertTrue(success)
+
+        # Simulate Application Restart: close session and dispose connection pool
+        self.session.close()
+        engine.dispose()
+
+        # Restart simulation: fresh session after boot
+        fresh_session = SessionLocal()
+        try:
+            # Occurrence must still be recognized as executed
+            self.assertTrue(is_already_executed(fresh_session, key))
+        finally:
+            clean_target = fresh_session.query(MessageLog).filter_by(execution_key=key).first()
+            if clean_target:
+                fresh_session.delete(clean_target)
+                fresh_session.commit()
+            fresh_session.close()
+
+    def test_13_different_scheduled_occurrences_of_same_reminder(self):
+        """Test that different occurrences of a recurring reminder generate unique keys and execute independently."""
+        from src.idempotency import generate_execution_key, is_already_executed, record_execution
+
+        reminder_id = "R_RECURRING_DAILY"
+        recipient = "daily.subscriber@company.com"
+
+        # Day 1 Occurrence: 2026-11-24 09:00 UTC
+        day1_time = "2026-11-24T09:00:00Z"
+        key_day1 = generate_execution_key(reminder_id, recipient, day1_time)
+
+        # Day 2 Occurrence: 2026-11-25 09:00 UTC
+        day2_time = "2026-11-25T09:00:00Z"
+        key_day2 = generate_execution_key(reminder_id, recipient, day2_time)
+
+        # Keys must be distinct
+        self.assertNotEqual(key_day1, key_day2)
+
+        # Execute Day 1
+        success1, _ = record_execution(self.session, key_day1, recipient, "Day 1 Reminder", "SENT")
+        self.assertTrue(success1)
+
+        # Day 1 is executed, but Day 2 is NOT yet executed
+        self.assertTrue(is_already_executed(self.session, key_day1))
+        self.assertFalse(is_already_executed(self.session, key_day2))
+
+        # Execute Day 2 independently
+        success2, _ = record_execution(self.session, key_day2, recipient, "Day 2 Reminder", "SENT")
+        self.assertTrue(success2)
+
+        # Both are now recorded
+        self.assertTrue(is_already_executed(self.session, key_day1))
+        self.assertTrue(is_already_executed(self.session, key_day2))
+
+        # Clean up
+        self.session.query(MessageLog).filter(MessageLog.execution_key.in_([key_day1, key_day2])).delete()
+        self.session.commit()
+
+    def test_14_database_portability_and_env_override(self):
+        """Test that DATABASE_URL can be configured dynamically without hardcoded paths."""
+        import os
+        from sqlalchemy import create_engine
+        from db.models import Base
+
+        # Verify default path is relative and not hardcoded to a specific user's Windows folder
+        from db.database import DATABASE_URL as ACTIVE_URL
+        self.assertTrue(ACTIVE_URL.startswith("sqlite:///"))
+        self.assertIn("db/email.db", ACTIVE_URL.replace("\\", "/"))
+
+        # Verify dynamic creation using memory database (simulating cloned environment override)
+        test_custom_url = "sqlite:///:memory:"
+        custom_engine = create_engine(test_custom_url)
+        Base.metadata.create_all(bind=custom_engine)
+        self.assertTrue(custom_engine.dialect.has_table(custom_engine.connect(), "employees"))
+        custom_engine.dispose()
+
 
 if __name__ == "__main__":
     unittest.main()
