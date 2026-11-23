@@ -125,7 +125,24 @@ export default function Home() {
             alignItems: 'center'
           }}
         >
-          👥 Open Employee Directory
+          Workforce Directory
+        </a>
+
+        <a
+          href="/templates"
+          style={{
+            backgroundColor: '#2563eb',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: 6,
+            padding: '10px 18px',
+            fontSize: 14,
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center'
+          }}
+        >
+          Email Templates Studio
         </a>
 
         <button

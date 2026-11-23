@@ -294,6 +294,13 @@ export default function EmployeeManagementPage() {
       {/* Header */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, borderBottom: '1px solid #e2e8f0', paddingBottom: 20 }}>
         <div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
+            <a href="/" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Home</a>
+            <span style={{ color: '#cbd5e1' }}>/</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Workforce</span>
+            <span style={{ color: '#cbd5e1' }}>/</span>
+            <a href="/templates" style={{ color: '#2563eb', textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>Email Templates Studio &rarr;</a>
+          </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>Employee Directory</h1>
           <p style={{ color: '#64748b', margin: '4px 0 0 0', fontSize: 14 }}>
             Centralized corporate workforce database and recipient synchronization engine

@@ -201,22 +201,66 @@ with tabs[2]:
         db.close()
 
 
-# ----------------- TAB 4: TEMPLATE PREVIEWS ----------------- #
+# ----------------- TAB 4: TEMPLATE STUDIO & PREVIEWS ----------------- #
 with tabs[3]:
-    st.subheader("Live Notification Template Previews")
-    jobs = get_merged_reminder_jobs()
-    if jobs:
-        selected_job_idx = st.selectbox(
-            "Select a reminder to preview:",
-            range(len(jobs)),
-            format_func=lambda i: f"{jobs[i].get('reminder_id')} - {jobs[i].get('title')} ({jobs[i].get('name')})"
-        )
-        selected_job = jobs[selected_job_idx]
-        tmpl = selected_job.get("template_name", "meeting_reminder.html")
-        subject, html = render_email_content(tmpl, selected_job)
+    st.subheader("Template Studio & Jinja2 Live Previews (Unified Database)")
+    db = SessionLocal()
+    try:
+        from src.services import template_service
+        all_templates, t_count = template_service.list_templates(db)
+        all_employees, _ = employee_service.list_employees(db, limit=100)
 
-        st.info(f"Subject: {subject}")
-        st.components.v1.html(html, height=500, scrolling=True)
+        t_col1, t_col2 = st.columns([1, 1])
+
+        with t_col1:
+            st.markdown("**1. Select Template & Recipient Context**")
+            if all_templates:
+                chosen_template_idx = st.selectbox(
+                    "Choose Template",
+                    range(len(all_templates)),
+                    format_func=lambda i: f"[{all_templates[i].category}] {all_templates[i].template_name}"
+                )
+                selected_tmpl = all_templates[chosen_template_idx]
+            else:
+                selected_tmpl = None
+                st.warning("No templates found in database.")
+
+            if all_employees:
+                chosen_emp_idx = st.selectbox(
+                    "Personalize with Employee",
+                    range(len(all_employees)),
+                    format_func=lambda i: f"{all_employees[i].full_name} ({all_employees[i].employee_id} - {all_employees[i].department})"
+                )
+                selected_emp = all_employees[chosen_emp_idx]
+            else:
+                selected_emp = None
+
+        with t_col2:
+            st.markdown("**2. Available Personalization Tags**")
+            st.caption("Jinja2 Sandboxed: `{{ name }}`, `{{ email }}`, `{{ department }}`, `{{ event_name }}`, `{{ meeting_link }}`")
+            if selected_tmpl:
+                st.code(f"Subject: {selected_tmpl.subject}\nCategory: {selected_tmpl.category}")
+
+        if selected_tmpl:
+            preview_res = template_service.render_template_preview(
+                db=db,
+                subject_tmpl=selected_tmpl.subject,
+                body_tmpl=selected_tmpl.body,
+                employee_id=selected_emp.id if selected_emp else None
+            )
+
+            st.markdown("---")
+            if preview_res.is_valid:
+                st.success(f"Rendered Subject: **{preview_res.rendered_subject}**")
+                ptab1, ptab2 = st.tabs(["HTML Preview", "Plain-Text Fallback"])
+                with ptab1:
+                    st.components.v1.html(preview_res.rendered_html, height=450, scrolling=True)
+                with ptab2:
+                    st.text(preview_res.plain_text_fallback)
+            else:
+                st.error(f"Validation Error: {preview_res.validation_error}")
+    finally:
+        db.close()
 
 
 # ----------------- TAB 5: DELIVERY AUDIT LOGS ----------------- #
