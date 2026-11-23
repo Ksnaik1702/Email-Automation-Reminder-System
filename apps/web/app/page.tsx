@@ -111,6 +111,23 @@ export default function Home() {
 
       {/* Action Controls */}
       <section style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <a
+          href="/employees"
+          style={{
+            backgroundColor: '#0f172a',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: 6,
+            padding: '10px 18px',
+            fontSize: 14,
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center'
+          }}
+        >
+          👥 Open Employee Directory
+        </a>
+
         <button
           onClick={createDemoPipeline}
           disabled={loading}

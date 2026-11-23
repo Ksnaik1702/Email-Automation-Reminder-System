@@ -11,6 +11,7 @@ from pydantic import BaseModel, field_validator
 
 from db.database import get_connection, init_db
 from src.webhooks import router as tracking_router
+from api.routes.employees import router as employees_router
 from src.scheduler import dispatch_batch
 from src.data_loader import validate_email
 
@@ -32,8 +33,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include webhook tracking router (/t/o/... and /t/c/...)
+# Include Routers
 app.include_router(tracking_router)
+app.include_router(employees_router)
 
 # ----------------- Schemas ----------------- #
 class ContactCreate(BaseModel):
