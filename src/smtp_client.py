@@ -90,16 +90,44 @@ class SMTPConfig:
         )
 
 
+def parse_smtp_queue_id(smtp_response: Optional[str]) -> Optional[str]:
+    """
+    Attempts to extract an upstream SMTP server queue ID from a 250 OK response line.
+    Common formats:
+      - Postfix/Exim: '250 2.0.0 Ok: queued as 4S9XYZ123' -> '4S9XYZ123'
+      - Sendmail: '250 2.0.0 w2N123456 Message accepted for delivery' -> 'w2N123456'
+    Returns None if the server response does not expose a discernible queue ID.
+    """
+    if not smtp_response:
+        return None
+    match = re.search(r'(?:queued\s+as|ok:?\s+queued\s+as)\s+([A-Za-z0-9._-]+)', smtp_response, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+
 class SMTPDeliveryResult(NamedTuple):
-    """Normalized dispatch result containing delivery status and diagnostics."""
-    status: str                       # SIMULATED_SUCCESS, SMTP_ACCEPTED, FAILED, RETRY_PENDING, SKIPPED_INACTIVE
-    message_id: Optional[str]
-    smtp_response: Optional[str]
-    error_category: Optional[str]     # None, AUTHENTICATION_ERROR, TEMPORARY_NETWORK, RECIPIENT_REJECTED, etc.
+    """
+    Normalized dispatch result containing delivery status and diagnostics.
+
+    Message Identifier Classification:
+    - message_id: Locally generated RFC 5322 Message-ID header (e.g. '<uuid@domain>').
+      Generated client-side before transmission for RFC 5322 conformance and audit correlation.
+      NOTE: Standard direct SMTP connections (including Gmail SMTP) do NOT return a distinct
+      provider-generated message ID during the SMTP dialog.
+    - smtp_queue_id: Server-assigned queue identifier if returned in the SMTP 250 response line.
+    - provider_id: Provider-specific message ID (available only via provider HTTP APIs or webhooks).
+    """
+    status: str                       # SIMULATED_SUCCESS, SMTP_ACCEPTED, FAILED, RETRY_PENDING, SKIPPED_INACTIVE, DELIVERY_UNCERTAIN
+    message_id: Optional[str]         # Locally generated RFC 5322 Message-ID
+    smtp_response: Optional[str]      # Upstream SMTP response line (e.g., 250 OK ...)
+    error_category: Optional[str]     # None, AUTHENTICATION_ERROR, TEMPORARY_NETWORK, DELIVERY_UNCERTAIN, etc.
     error_message: Optional[str]
     attempt: int
     retry_after_seconds: Optional[int]
     next_retry_at: Optional[datetime.datetime]
+    smtp_queue_id: Optional[str] = None  # Server queue identifier if parsed from 250 OK
+    provider_id: Optional[str] = None    # Provider-assigned ID (API/webhooks only; None in direct SMTP)
 
 
 class SMTPClient:
@@ -297,13 +325,15 @@ class SMTPClient:
 
             return SMTPDeliveryResult(
                 status="SMTP_ACCEPTED",
-                message_id=msg["Message-ID"],
+                message_id=msg["Message-ID"],  # Locally generated RFC 5322 Message-ID
                 smtp_response=resp_str,
                 error_category=None,
                 error_message=None,
                 attempt=attempt,
                 retry_after_seconds=None,
-                next_retry_at=None
+                next_retry_at=None,
+                smtp_queue_id=parse_smtp_queue_id(resp_str),
+                provider_id=None  # Standard direct SMTP does not return a provider-assigned ID
             )
 
         # ----------------- Permanent Failures (Never Retried) ----------------- #

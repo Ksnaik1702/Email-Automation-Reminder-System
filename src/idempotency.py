@@ -1,7 +1,8 @@
 """
 Idempotency and Duplicate Execution Prevention Service.
 Generates deterministic execution keys for scheduled occurrences using stable identifiers.
-Guarantees at-most-once delivery semantics across restarts and multi-cycle scheduler runs.
+Enforces execution key uniqueness across restarts and multi-cycle scheduler runs,
+preventing automated duplicate submission.
 """
 import hashlib
 import datetime
