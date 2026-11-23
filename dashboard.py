@@ -42,22 +42,44 @@ with tabs[0]:
         mode = st.radio("Dispatch Mode", ["Virtual Simulation (Dry-Run)", "Live SMTP Delivery"], horizontal=True)
         is_dry_run = "Virtual" in mode
 
-        if st.button("Trigger Notification Batch Now", type="primary"):
-            with st.spinner("Processing batch jobs..."):
-                results = dispatch_batch(dry_run=is_dry_run)
-                st.success(f"Batch completed! Processed {len(results)} notification jobs.")
-                st.rerun()
+        dispatch_col_a, dispatch_col_b = st.columns(2)
+        with dispatch_col_a:
+            if st.button("Trigger Scheduling Engine Sweep", type="primary"):
+                with st.spinner("Executing scheduling engine sweep across database..."):
+                    db_sess = SessionLocal()
+                    try:
+                        from src.services import scheduling_service
+                        sweep_res = scheduling_service.run_pending_jobs(db_sess, simulation_mode=is_dry_run)
+                        st.success(
+                            f"Sweep finished! Campaigns: {sweep_res['campaigns_processed']}, "
+                            f"Reminders: {sweep_res['reminders_processed']}, "
+                            f"Simulated: {sweep_res['messages_simulated']}, "
+                            f"Duplicates Blocked: {sweep_res['duplicates_prevented']}"
+                        )
+                        st.rerun()
+                    finally:
+                        db_sess.close()
+
+        with dispatch_col_b:
+            if st.button("Trigger CSV Demo Batch"):
+                with st.spinner("Processing legacy CSV batch jobs..."):
+                    results = dispatch_batch(dry_run=is_dry_run)
+                    st.success(f"CSV batch completed! Processed {len(results)} notification jobs.")
+                    st.rerun()
 
     with col2:
         db = SessionLocal()
         try:
+            from src.services import scheduling_service
+            due_c = len(scheduling_service.get_due_campaigns(db))
+            due_r = len(scheduling_service.get_due_reminders(db))
             total_logs = db.query(MessageLog).count()
             sent_count = db.query(MessageLog).filter(MessageLog.execution_status.in_(["SENT", "SIMULATED_SUCCESS"])).count()
-            failed_count = db.query(MessageLog).filter(MessageLog.execution_status == "FAILED").count()
+            dup_prevented = db.query(MessageLog).filter(MessageLog.execution_status == "SKIPPED_DUPLICATE").count()
 
-            st.metric("Total Executions Recorded", total_logs)
+            st.metric("Total Executions Logged", total_logs)
             st.metric("Successful / Simulated", sent_count)
-            st.metric("Failed", failed_count)
+            st.metric("Pending Due Jobs", f"{due_c} campaigns | {due_r} reminders")
         finally:
             db.close()
 

@@ -52,18 +52,31 @@ def normalize_scheduled_time(scheduled_time: Union[datetime.datetime, str]) -> s
 def generate_execution_key(
     reminder_id: Union[int, str],
     recipient: str,
-    scheduled_at: Union[datetime.datetime, str]
+    scheduled_at: Union[datetime.datetime, str],
+    job_type: str = "reminder"
 ) -> str:
     """
     Generates a deterministic SHA-256 idempotency key using stable occurrence coordinates:
-    canonical = reminder_id|recipient_email|scheduled_timestamp_utc
+    canonical = {job_type}:{job_id}|recipient:{recipient_email}|scheduled:{scheduled_timestamp_utc}
+    Default job_type is 'reminder' for full backward compatibility.
     """
-    clean_reminder_id = str(reminder_id).strip()
+    clean_job_id = str(reminder_id).strip()
     clean_recipient = normalize_recipient_email(recipient)
     clean_timestamp = normalize_scheduled_time(scheduled_at)
 
-    canonical = f"reminder:{clean_reminder_id}|recipient:{clean_recipient}|scheduled:{clean_timestamp}"
+    canonical = f"{job_type}:{clean_job_id}|recipient:{clean_recipient}|scheduled:{clean_timestamp}"
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:40]
+
+
+def generate_campaign_execution_key(
+    campaign_id: Union[int, str],
+    recipient: str,
+    scheduled_at: Union[datetime.datetime, str]
+) -> str:
+    """
+    Helper to generate a deterministic idempotency key for campaign message dispatches.
+    """
+    return generate_execution_key(campaign_id, recipient, scheduled_at, job_type="campaign")
 
 
 def is_already_executed(session: Session, execution_key: str) -> bool:
