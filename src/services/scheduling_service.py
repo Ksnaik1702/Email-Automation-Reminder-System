@@ -157,6 +157,7 @@ def process_due_campaign(
         "skipped_duplicate": 0,
         "skipped_inactive": 0,
         "retry_pending": 0,
+        "delivery_uncertain": 0,
         "errors": []
     }
 
@@ -340,6 +341,10 @@ def process_due_campaign(
             elif delivery_res.status == "RETRY_PENDING":
                 recipient.status = "Retry_Pending"
                 stats["retry_pending"] += 1
+            elif delivery_res.status == "DELIVERY_UNCERTAIN":
+                recipient.status = "Delivery_Uncertain"
+                stats["delivery_uncertain"] += 1
+                stats["errors"].append(delivery_res.error_message or "Delivery uncertain (timeout awaiting response)")
             else:
                 recipient.status = "Failed"
                 stats["errors"].append(delivery_res.error_message or "SMTP delivery failed")
@@ -634,12 +639,23 @@ def run_pending_jobs(
         "reminders_processed": 0,
         "messages_simulated": 0,
         "messages_accepted": 0,
+        "messages_uncertain": 0,
         "retries_scheduled": 0,
         "retries_processed": 0,
         "duplicates_prevented": 0,
         "inactive_skipped": 0,
         "errors": []
     }
+
+    # Safety Guard: Live SMTP mode must fail closed if unconfirmed
+    if not simulation_mode:
+        env_confirmed = os.getenv("CONFIRM_LIVE_DELIVERY", "").lower() in ("true", "1", "yes") or \
+                        os.getenv("LIVE_DELIVERY_CONFIRMED", "").lower() in ("true", "1", "yes")
+        if not env_confirmed:
+            refusal_err = "Safety refusal: Live SMTP delivery mode requires explicit confirmation (CONFIRM_LIVE_DELIVERY=true). Refusing execution."
+            logger.error(f"🚨 [SAFETY REFUSAL] {refusal_err}")
+            summary["errors"].append(refusal_err)
+            return summary
 
     try:
         # A. Process due campaigns
@@ -652,6 +668,7 @@ def run_pending_jobs(
                 summary["campaigns_processed"] += 1
                 summary["messages_simulated"] += res.get("simulated", 0)
                 summary["messages_accepted"] += res.get("dispatched", 0)
+                summary["messages_uncertain"] += res.get("delivery_uncertain", 0)
                 summary["duplicates_prevented"] += res.get("skipped_duplicate", 0)
                 summary["inactive_skipped"] += res.get("skipped_inactive", 0)
                 summary["retries_scheduled"] += res.get("retry_pending", 0)
@@ -674,6 +691,8 @@ def run_pending_jobs(
                     summary["messages_simulated"] += 1
                 elif res.get("status") == "SMTP_ACCEPTED":
                     summary["messages_accepted"] += 1
+                elif res.get("status") == "DELIVERY_UNCERTAIN":
+                    summary["messages_uncertain"] += 1
                 elif res.get("status") == "Skipped_Duplicate":
                     summary["duplicates_prevented"] += 1
                 elif res.get("status") == "SKIPPED_INACTIVE":

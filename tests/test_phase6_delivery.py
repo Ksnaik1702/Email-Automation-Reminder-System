@@ -7,15 +7,18 @@ import os
 import socket
 import smtplib
 import datetime
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch, MagicMock
 from fastapi import HTTPException
 
 from db.database import SessionLocal, init_db
 from db.models import Employee, EmailTemplate, Campaign, CampaignRecipient, ReminderJob, MessageLog
-from src.smtp_client import SMTPClient, SMTPConfig, SMTPDeliveryResult
+from src.smtp_client import SMTPClient, SMTPConfig, SMTPDeliveryResult, SMTPAwaitingResponseError
 from src.services import scheduling_service
 from src.idempotency import generate_campaign_execution_key, is_already_executed
+from src.worker import BackgroundWorker
 from api.routes.scheduler import verify_smtp_connection, trigger_scheduler_cycle
 
 
@@ -517,6 +520,174 @@ class TestPhase6DeliveryEngine(unittest.TestCase):
             trigger_scheduler_cycle(simulation=False, confirm_live=False, db=self.session)
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertIn("Safety refusal", ctx.exception.detail)
+
+    # --------------------------------------------------------------------------
+    # TEST 11: Timeout After Message Submission Marked as DELIVERY_UNCERTAIN
+    # --------------------------------------------------------------------------
+    @patch("src.smtp_client.smtplib.SMTP")
+    def test_11_timeout_after_message_submission_uncertain(self, mock_smtp_cls):
+        """Timeout after message submission must mark DELIVERY_UNCERTAIN and disable retries."""
+        mock_server = MagicMock()
+        mock_server.send_message.side_effect = SMTPAwaitingResponseError(
+            "Socket timed out while awaiting 250 OK acknowledgment after data submission"
+        )
+        mock_smtp_cls.return_value.__enter__.return_value = mock_server
+
+        campaign = Campaign(
+            campaign_name="Test P6 Post-Submission Timeout",
+            template_id=self.template.id,
+            scheduled_at=datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=5),
+            status="READY"
+        )
+        self.session.add(campaign)
+        self.session.commit()
+
+        rec = CampaignRecipient(
+            campaign_id=campaign.id,
+            employee_id=self.active_emp.id,
+            recipient_email=self.active_emp.email,
+            status="PENDING"
+        )
+        self.session.add(rec)
+        self.session.commit()
+
+        summary = scheduling_service.process_due_campaign(
+            db=self.session,
+            campaign=campaign,
+            simulation_mode=False
+        )
+
+        self.assertEqual(summary["dispatched"], 0)
+        self.assertEqual(summary["delivery_uncertain"], 1)
+
+        log = self.session.query(MessageLog).filter_by(
+            campaign_id=campaign.id,
+            employee_id=self.active_emp.id
+        ).first()
+
+        self.assertIsNotNone(log)
+        self.assertEqual(log.execution_status, "DELIVERY_UNCERTAIN")
+        self.assertEqual(log.error_category, "DELIVERY_UNCERTAIN")
+        self.assertIsNone(log.next_retry_at)  # Must NEVER automatically retry an uncertain outcome
+        self.assertIsNotNone(log.provider_message_id)  # Message-ID preserved for downstream tracing
+
+    # --------------------------------------------------------------------------
+    # TEST 12: Uncertain Outcome Is Never Automatically Retried
+    # --------------------------------------------------------------------------
+    def test_12_uncertain_outcome_not_automatically_retried(self):
+        """DELIVERY_UNCERTAIN records are skipped by process_pending_retries and idempotency guards."""
+        exec_key = "test_key_uncertain_audit_999"
+        log = MessageLog(
+            execution_key=exec_key,
+            recipient_email="kiran.patel@testcorp.com",
+            subject="Test Uncertain Notice",
+            execution_mode="LIVE_SMTP",
+            execution_status="DELIVERY_UNCERTAIN",
+            attempt_count=1,
+            next_retry_at=None,
+            error_category="DELIVERY_UNCERTAIN",
+            error_message="Awaiting response timeout",
+            scheduled_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        )
+        self.session.add(log)
+        self.session.commit()
+
+        # 1. process_pending_retries must ignore DELIVERY_UNCERTAIN rows
+        reprocessed = scheduling_service.process_pending_retries(db=self.session)
+        self.assertEqual(reprocessed, 0)
+
+        # 2. Idempotency guard must treat DELIVERY_UNCERTAIN as executed (blocking repeated automatic sends)
+        self.assertTrue(is_already_executed(self.session, exec_key))
+
+        # Cleanup
+        self.session.delete(log)
+        self.session.commit()
+
+    # --------------------------------------------------------------------------
+    # TEST 13: Live Mode Without Confirmation Fails Closed
+    # --------------------------------------------------------------------------
+    def test_13_live_mode_without_confirmation_fails_closed(self):
+        """Unconfirmed live execution must fail closed without dispatching any emails."""
+        # Unset env confirmation temporarily
+        old_val = os.environ.pop("CONFIRM_LIVE_DELIVERY", None)
+        try:
+            # A. BackgroundWorker direct instantiation without confirmation must raise ValueError
+            with self.assertRaises(ValueError) as ctx:
+                BackgroundWorker(simulation_mode=False)
+            self.assertIn("Safety Refusal", str(ctx.exception))
+
+            # B. scheduling_service.run_pending_jobs must return refusal error and 0 processed
+            res = scheduling_service.run_pending_jobs(db=self.session, simulation_mode=False)
+            self.assertIn("Safety refusal", res["errors"][0])
+            self.assertEqual(res["messages_accepted"], 0)
+            self.assertEqual(res["campaigns_processed"], 0)
+
+            # C. CLI invocation: python worker.py --live (without --confirm-live) must exit with code 1
+            cmd = [sys.executable, "worker.py", "--live"]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 1)
+            output = proc.stdout + proc.stderr
+            self.assertIn("SAFETY REFUSAL", output)
+        finally:
+            if old_val is not None:
+                os.environ["CONFIRM_LIVE_DELIVERY"] = old_val
+
+    # --------------------------------------------------------------------------
+    # TEST 14: Maximum Retry Limit Enforced Terminal Failure
+    # --------------------------------------------------------------------------
+    @patch("src.smtp_client.smtplib.SMTP")
+    def test_14_max_retry_limit_enforced_terminal_failure(self, mock_smtp_cls):
+        """When attempt reaches max_retries, result transitions to terminal FAILED status."""
+        mock_server = MagicMock()
+        mock_server.send_message.side_effect = socket.timeout("Pre-submission connection timed out")
+        mock_smtp_cls.return_value.__enter__.return_value = mock_server
+
+        client = SMTPClient()
+        # Test final attempt (attempt == max_retries == 3)
+        res = client.send_live_email(
+            to_email="kiran.patel@testcorp.com",
+            subject="Test Terminal Retry",
+            html_content="<p>Body</p>",
+            attempt=client.config.max_retries
+        )
+
+        self.assertEqual(res.status, "FAILED")
+        self.assertEqual(res.error_category, "MAX_RETRIES_EXCEEDED")
+        self.assertIsNone(res.next_retry_at)
+        self.assertIsNone(res.retry_after_seconds)
+
+    # --------------------------------------------------------------------------
+    # TEST 15: Exponential Backoff Is Strictly Bounded
+    # --------------------------------------------------------------------------
+    @patch("src.smtp_client.smtplib.SMTP")
+    def test_15_exponential_backoff_is_bounded(self, mock_smtp_cls):
+        """Exponential backoff delay must be capped at max_backoff_seconds."""
+        mock_server = MagicMock()
+        mock_server.send_message.side_effect = socket.timeout("Pre-submission timeout")
+        mock_smtp_cls.return_value.__enter__.return_value = mock_server
+
+        cfg = SMTPConfig(
+            host="smtp.testserver.com",
+            user="testuser@testcorp.com",
+            password="mockpassword123",
+            from_email="noreply@testcorp.com",
+            backoff_base_seconds=60,
+            max_backoff_seconds=180,  # Cap at 180s (3 minutes)
+            max_retries=5
+        )
+        client = SMTPClient(config=cfg)
+
+        # Attempt 1: 60 * 2^0 = 60s
+        res1 = client.send_live_email("kiran.patel@testcorp.com", "Sub", "<p>Body</p>", attempt=1)
+        self.assertEqual(res1.retry_after_seconds, 60)
+
+        # Attempt 2: 60 * 2^1 = 120s
+        res2 = client.send_live_email("kiran.patel@testcorp.com", "Sub", "<p>Body</p>", attempt=2)
+        self.assertEqual(res2.retry_after_seconds, 120)
+
+        # Attempt 3: 60 * 2^2 = 240s -> Capped at 180s!
+        res3 = client.send_live_email("kiran.patel@testcorp.com", "Sub", "<p>Body</p>", attempt=3)
+        self.assertEqual(res3.retry_after_seconds, 180)
 
 
 if __name__ == "__main__":

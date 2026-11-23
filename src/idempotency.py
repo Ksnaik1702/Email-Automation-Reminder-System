@@ -82,12 +82,13 @@ def generate_campaign_execution_key(
 def is_already_executed(session: Session, execution_key: str) -> bool:
     """
     Checks if a scheduled occurrence has already been executed in the MessageLog table.
-    Considers SIMULATED_SUCCESS, SMTP_ACCEPTED, SENT, and DELIVERY_CONFIRMED as executed.
+    Considers SIMULATED_SUCCESS, SMTP_ACCEPTED, SENT, DELIVERY_CONFIRMED, and DELIVERY_UNCERTAIN as executed.
+    DELIVERY_UNCERTAIN is treated as executed to prevent unsafe automatic resending.
     """
     from db.models import MessageLog
     existing = session.query(MessageLog).filter_by(execution_key=execution_key).first()
     return existing is not None and existing.execution_status in (
-        "SENT", "SIMULATED_SUCCESS", "SMTP_ACCEPTED", "DELIVERY_CONFIRMED"
+        "SENT", "SIMULATED_SUCCESS", "SMTP_ACCEPTED", "DELIVERY_CONFIRMED", "DELIVERY_UNCERTAIN"
     )
 
 
@@ -121,9 +122,9 @@ def record_execution(
     existing = session.query(MessageLog).filter_by(execution_key=execution_key).first()
 
     if existing:
-        # If already terminal/successful, block duplicate execution attempt
-        if existing.execution_status in ("SENT", "SIMULATED_SUCCESS", "SMTP_ACCEPTED", "DELIVERY_CONFIRMED"):
-            return False, f"Duplicate execution blocked: Key {execution_key} has already been executed with status '{existing.execution_status}'."
+        # If already terminal, successful, or uncertain, block duplicate execution attempt
+        if existing.execution_status in ("SENT", "SIMULATED_SUCCESS", "SMTP_ACCEPTED", "DELIVERY_CONFIRMED", "DELIVERY_UNCERTAIN"):
+            return False, f"Duplicate execution blocked: Key {execution_key} has already been recorded with status '{existing.execution_status}'."
 
         # Otherwise, this is updating a pending/retry attempt
         existing.execution_status = status

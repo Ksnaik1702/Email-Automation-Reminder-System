@@ -299,26 +299,84 @@ When configuring Google Workspace or personal Gmail accounts for live email deli
 ## 📊 Delivery Reliability & Audit Logging Architecture
 
 ### 1. Delivery Status Lifecycle
-The system strictly distinguishes between SMTP acceptance and inbox delivery:
-- `SIMULATED_SUCCESS`: Email successfully rendered and saved to local previews (Simulation Mode).
-- `SMTP_ACCEPTED`: Upstream SMTP relay accepted the message (`250 OK`) into its transmission queue.
-- `RETRY_PENDING`: Temporary failure encountered; scheduled for automated retry with exponential backoff.
-- `SKIPPED_INACTIVE`: Recipient employee is not active (`employment_status != 'Active'`); delivery prevented.
-- `FAILED`: Permanent error encountered (e.g., auth failure, invalid recipient format) or max retries exceeded.
-- `DELIVERY_CONFIRMED`: Reserved for downstream webhook delivery receipts (SendGrid/Mailgun).
+The system strictly distinguishes between SMTP relay acceptance and confirmed inbox delivery:
+- `SIMULATED_SUCCESS`: Email successfully rendered and saved to local previews in `outputs/previews/` (Simulation Mode).
+- `SMTP_ACCEPTED`: Upstream SMTP relay accepted the message (`250 OK`) into its transmission queue. *Note: Under RFC 5321, this confirms relay ingestion, not recipient inbox arrival.*
+- `DELIVERY_UNCERTAIN`: Timeout or connection loss occurred *after* message payload transmission while awaiting the server's final acknowledgment. Automatic retries are disabled to prevent duplicate transmissions.
+- `RETRY_PENDING`: Pre-submission temporary failure encountered; scheduled for automated retry with bounded exponential backoff.
+- `SKIPPED_INACTIVE`: Recipient employee is not active (`employment_status != 'Active'`); delivery safely prevented.
+- `FAILED`: Permanent error encountered (e.g., auth failure, invalid recipient syntax) or maximum retry limit exceeded.
+- `DELIVERY_CONFIRMED`: Reserved for downstream webhook delivery receipts (SendGrid, Mailgun, Postmark).
 
-### 2. Error Categorization & Retry Backoff
-- **Temporary Errors (`TEMPORARY_NETWORK_ERROR`, `TEMPORARY_RATE_LIMIT`):**
-  - Socket timeouts, 421 Service not available, 450 Mailbox busy, 451 Local error.
-  - Automatically retried with exponential backoff: $T_{\text{wait}} = \text{backoff\_base} \times 2^{(\text{attempt} - 1)}$.
-  - Maximum retry attempts default to 3 before marking as `FAILED`.
-- **Permanent Errors (`AUTHENTICATION_FAILED`, `INVALID_RECIPIENT_ADDRESS`, `RECIPIENT_REJECTED`):**
-  - Invalid SMTP login credentials, malformed email addresses (e.g. missing `@` or domain), 550 Mailbox not found.
-  - Immediately marked `FAILED` without retrying.
+### 2. Stage-Aware SMTP Error Handling & Uncertain Outcomes
+A critical failure mode in SMTP automation occurs when a network connection drops or times out **after** the message payload has been transmitted over the socket, while awaiting the server's final acknowledgment (`250 OK`):
+- **Pre-Submission Failures:** If a timeout or socket error occurs during connection, TLS negotiation, authentication, or envelope creation (`MAIL FROM` / `RCPT TO`), the message was never submitted to the SMTP relay. The attempt is safely marked `RETRY_PENDING` and scheduled for automatic retry.
+- **Post-Submission Uncertainties:** If the timeout occurs after data submission while awaiting `250 OK`, the upstream relay may have already spooled and dispatched the email. Automatically resending would produce duplicate emails in the recipient's inbox.
+- **Fail-Safe Policy:** The attempt is recorded as `DELIVERY_UNCERTAIN` (`next_retry_at = None`). Automatic retry loops ignore it, preserving the execution key and complete audit history until an explicit administrative recovery decision is made.
+- **No Exactly-Once Delivery Claim:** Due to the asynchronous nature of SMTP relays, DNS MX routing, spam filters, and delayed bounces, distributed email systems cannot claim strictly exactly-once delivery.
 
-### 3. Unified Audit Log Schema (`message_logs`)
-Every execution records 18 diagnostic columns in the centralized SQLite database:
-`id`, `campaign_id`, `reminder_id`, `employee_id`, `template_id`, `recipient_email`, `subject`, `execution_key`, `execution_mode`, `execution_status`, `attempt_count`, `smtp_response`, `provider_message_id`, `error_category`, `error_message`, `scheduled_at`, `executed_at`, `next_retry_at`.
+### 3. Configurable Retry Limits & Bounded Exponential Backoff
+- **Configurable Attempt Limit:** `MAX_RETRIES` (default: `3`) governs maximum delivery attempts before terminal failure.
+- **Bounded Exponential Backoff:** Delay between retry attempts is governed by:
+  $$T_{\text{wait}} = \min\left(\text{MAX\_BACKOFF\_SECONDS},\, \text{RETRY\_BACKOFF\_BASE\_SECONDS} \times 2^{(\text{attempt} - 1)}\right)$$
+  Default: 60s (attempt 1), 120s (attempt 2), 240s (attempt 3), capped at `MAX_BACKOFF_SECONDS` (3600s).
+- **Permanent Errors:** Authentication errors (`535`), recipient syntax errors, and mailbox rejections (`550`) are marked as `FAILED` immediately without retries.
+- **Terminal Exhaustion:** When `attempt >= MAX_RETRIES`, the message transitions to `FAILED` with `error_category="MAX_RETRIES_EXCEEDED"`.
+- **Complete Audit Trail:** Every attempt increments `attempt_count` and updates `executed_at`, `error_message`, and `smtp_response` in `message_logs`.
+
+### 4. Fail-Closed Live Mode Confirmation
+To guarantee safety across automation pipelines and CI/CD:
+- **Default Mode:** Simulation Mode is strictly active by default whenever live mode is not explicitly invoked.
+- **Fail Closed Behavior:** If `--live` is provided without `--confirm-live` (and without `CONFIRM_LIVE_DELIVERY=true` in `.env`), the system **fails closed**:
+  - Displays an explicit refusal error explaining the missing safety confirmation.
+  - Exits immediately with exit code 1.
+  - Does **not** process any campaigns or reminders.
+  - Does **not** silently fall back to simulation mode.
+
+---
+
+## 🧪 How to Conduct a Safe Single-Recipient SMTP Test
+
+To test real SMTP delivery to your own personal email with zero risk of sending unwanted messages:
+
+1. **Configure Credentials in `.env`:**
+   ```env
+   SIMULATION_MODE=false
+   CONFIRM_LIVE_DELIVERY=true
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USE_TLS=true
+   SMTP_USER=your_email@gmail.com
+   SMTP_PASS=xxxx-xxxx-xxxx-xxxx
+   SMTP_FROM_EMAIL=your_email@gmail.com
+   SMTP_FROM_NAME="Test Dispatcher"
+   ```
+
+2. **Verify Connectivity via API Handshake (No Email Sent):**
+   ```bash
+   curl -X POST http://127.0.0.1:8000/api/scheduler/verify-smtp
+   ```
+   *Expected Response:* `{"success": true, "host": "smtp.gmail.com", "port": 587, ...}`
+
+3. **Create a Single-Recipient Test Campaign:**
+   - Using the web dashboard or REST API (`POST /api/campaigns`):
+     - Select an existing template (e.g., "Meeting Invitation").
+     - Target **only your own employee record** (e.g., `your_email@gmail.com`).
+     - Save and mark the campaign as `READY`.
+
+4. **Execute One-Off Single Sweep:**
+   ```bash
+   python worker.py --once --live --confirm-live
+   ```
+
+5. **Verify Delivery & Audit Log:**
+   - Check your inbox for the delivered email.
+   - Inspect the SQLite audit log:
+     ```sql
+     SELECT execution_key, execution_mode, execution_status, attempt_count, smtp_response, provider_message_id
+     FROM message_logs ORDER BY id DESC LIMIT 1;
+     ```
+   - Confirm status is `SMTP_ACCEPTED` with a valid `provider_message_id`.
 ```
 
 ### Option 4: Launch Interactive Streamlit Dashboard

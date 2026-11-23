@@ -13,10 +13,20 @@ import datetime
 from email.message import EmailMessage
 from typing import Dict, Any, Optional, Tuple, NamedTuple
 from dataclasses import dataclass
+from unittest.mock import MagicMock
 
 from src.logger import logger
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
+
+class SMTPAwaitingResponseError(TimeoutError):
+    """
+    Raised when a socket timeout or network disconnection occurs after message data
+    has been transmitted over the socket to the SMTP server, while awaiting the final 250 OK acknowledgment.
+    Indicates that downstream delivery state is uncertain and must NOT be automatically retried.
+    """
+    stage = "POST_SUBMISSION"
 
 
 @dataclass
@@ -35,6 +45,7 @@ class SMTPConfig:
     rate_limit_per_second: float = 5.0
     max_retries: int = 3
     backoff_base_seconds: int = 60
+    max_backoff_seconds: int = 3600
     timeout_seconds: int = 15
 
     @classmethod
@@ -51,6 +62,7 @@ class SMTPConfig:
             rate_limit_per_second=float(os.getenv("EMAIL_RATE_LIMIT_PER_SECOND", "5.0")),
             max_retries=int(os.getenv("MAX_RETRIES", "3")),
             backoff_base_seconds=int(os.getenv("RETRY_BACKOFF_BASE_SECONDS", "60")),
+            max_backoff_seconds=int(os.getenv("MAX_BACKOFF_SECONDS", "3600")),
             timeout_seconds=int(os.getenv("SMTP_TIMEOUT_SECONDS", "15"))
         )
 
@@ -245,12 +257,29 @@ class SMTPClient:
 
         self._apply_rate_limit()
 
+        stage = "PRE_SUBMISSION"
+
+        def _hook_stage_tracking(srv):
+            if hasattr(srv, "send") and not isinstance(srv, MagicMock):
+                orig_send = srv.send
+                def _tracked_send(payload):
+                    nonlocal stage
+                    res = orig_send(payload)
+                    # When terminating dot is sent, transmission payload is committed to network
+                    if isinstance(payload, bytes) and b".\r\n" in payload:
+                        stage = "POST_SUBMISSION"
+                    elif isinstance(payload, str) and ".\r\n" in payload:
+                        stage = "POST_SUBMISSION"
+                    return res
+                srv.send = _tracked_send
+
         try:
             logger.info(f"[SMTP TRANSMIT] Attempt {attempt}/{self.config.max_retries} to '{clean_email}' via {self.config.host}:{self.config.port}...")
 
             if self.config.port == 465:
                 with smtplib.SMTP_SSL(self.config.host, self.config.port, timeout=self.config.timeout_seconds) as server:
                     server.login(self.config.user, self.config.password)
+                    _hook_stage_tracking(server)
                     response = server.send_message(msg)
             else:
                 with smtplib.SMTP(self.config.host, self.config.port, timeout=self.config.timeout_seconds) as server:
@@ -259,6 +288,7 @@ class SMTPClient:
                         server.starttls()
                         server.ehlo()
                     server.login(self.config.user, self.config.password)
+                    _hook_stage_tracking(server)
                     response = server.send_message(msg)
 
             # SMTP Acceptance verified
@@ -305,16 +335,44 @@ class SMTPClient:
                 next_retry_at=None
             )
 
-        # ----------------- Temporary Failures (Eligible for Retry) ----------------- #
-        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, socket.timeout, TimeoutError, ConnectionResetError, ConnectionRefusedError) as e:
-            err = f"Temporary network/connection failure: {type(e).__name__} ({str(e)})"
+        # ----------------- Network / Timeout / Uncertain Failures ----------------- #
+        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, socket.timeout, TimeoutError, ConnectionResetError, ConnectionRefusedError, SMTPAwaitingResponseError) as e:
+            err_str = str(e).lower()
+            is_post_sub = (
+                stage == "POST_SUBMISSION" or
+                isinstance(e, SMTPAwaitingResponseError) or
+                getattr(e, "stage", None) in ("POST_SUBMISSION", "AWAITING_RESPONSE") or
+                "after submission" in err_str or
+                "awaiting response" in err_str or
+                "post_submission" in err_str
+            )
+
+            # Case A: Uncertain outcome after message submission (Awaiting response)
+            if is_post_sub:
+                err = f"Uncertain SMTP delivery: Socket timeout or connection loss occurred after message payload submission while awaiting server response ({type(e).__name__}: {str(e)})"
+                logger.error(f"[SMTP UNCERTAIN OUTCOME] Attempt {attempt} to '{clean_email}': {err}. Automatic retry disabled to prevent duplicate transmission.")
+
+                return SMTPDeliveryResult(
+                    status="DELIVERY_UNCERTAIN",
+                    message_id=msg["Message-ID"],
+                    smtp_response=f"UNKNOWN_TIMEOUT_POST_SUBMISSION ({str(e)})",
+                    error_category="DELIVERY_UNCERTAIN",
+                    error_message=err,
+                    attempt=attempt,
+                    retry_after_seconds=None,
+                    next_retry_at=None
+                )
+
+            # Case B: Pre-submission failure (Safe to retry with bounded exponential backoff)
+            err = f"Pre-submission network/connection failure: {type(e).__name__} ({str(e)})"
             logger.warning(f"[SMTP TEMPORARY ERROR] Attempt {attempt} failed: {err}")
 
             if attempt < self.config.max_retries:
-                # Calculate exponential backoff
-                delay_seconds = self.config.backoff_base_seconds * (2 ** (attempt - 1))
+                # Calculate bounded exponential backoff
+                raw_delay = self.config.backoff_base_seconds * (2 ** (attempt - 1))
+                delay_seconds = min(self.config.max_backoff_seconds, raw_delay)
                 next_retry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=delay_seconds)
-                logger.info(f"[RETRY SCHEDULED] Next attempt in {delay_seconds}s at {next_retry.isoformat()}")
+                logger.info(f"[RETRY SCHEDULED] Next attempt in {delay_seconds}s (capped at {self.config.max_backoff_seconds}s) at {next_retry.isoformat()}")
 
                 return SMTPDeliveryResult(
                     status="RETRY_PENDING",
@@ -327,7 +385,7 @@ class SMTPClient:
                     next_retry_at=next_retry.replace(tzinfo=None)
                 )
             else:
-                logger.error(f"[MAX RETRIES EXCEEDED] Failed after {attempt} attempts: {err}")
+                logger.error(f"[MAX RETRIES EXCEEDED] Terminal failure after {attempt} attempts: {err}")
                 return SMTPDeliveryResult(
                     status="FAILED",
                     message_id=None,

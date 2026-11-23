@@ -37,6 +37,15 @@ class BackgroundWorker:
         simulation_mode: bool = DEFAULT_SIMULATION_MODE,
         blocking: bool = True
     ):
+        if not simulation_mode:
+            env_confirmed = os.getenv("CONFIRM_LIVE_DELIVERY", "").lower() in ("true", "1", "yes") or \
+                            os.getenv("LIVE_DELIVERY_CONFIRMED", "").lower() in ("true", "1", "yes")
+            if not env_confirmed:
+                raise ValueError(
+                    "Safety Refusal: Live SMTP delivery mode requires explicit confirmation "
+                    "(CONFIRM_LIVE_DELIVERY=true). Refusing execution."
+                )
+
         self.poll_interval = max(1, poll_interval)
         self.simulation_mode = simulation_mode
         self.blocking = blocking
@@ -154,20 +163,19 @@ def main():
     args = parser.parse_args()
 
     # Safety check for live delivery mode
-    simulation = True
     if args.live:
         env_confirmed = os.getenv("CONFIRM_LIVE_DELIVERY", "").lower() in ("true", "1", "yes") or \
                         os.getenv("LIVE_DELIVERY_CONFIRMED", "").lower() in ("true", "1", "yes")
-        if args.confirm_live or env_confirmed:
-            simulation = False
-            logger.warning("🚨 [SAFETY NOTICE] Live SMTP delivery mode activated with explicit user confirmation.")
-        else:
+        if not (args.confirm_live or env_confirmed):
             logger.error(
                 "🚨 [SAFETY REFUSAL] Live SMTP delivery was requested with --live, but confirmation flag "
-                "--confirm-live was not provided (or CONFIRM_LIVE_DELIVERY=true). "
-                "Refusing live email transmission! Falling back safely to VIRTUAL SIMULATION mode."
+                "--confirm-live was not provided (and CONFIRM_LIVE_DELIVERY=true is not set in environment). "
+                "Execution refused: Live email transmission requires explicit safety confirmation. "
+                "Exiting immediately without processing any jobs."
             )
-            simulation = True
+            sys.exit(1)
+        simulation = False
+        logger.warning("🚨 [SAFETY NOTICE] Live SMTP delivery mode activated with explicit user confirmation.")
     else:
         simulation = True
 

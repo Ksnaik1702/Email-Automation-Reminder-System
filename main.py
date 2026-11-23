@@ -89,10 +89,20 @@ def main():
         sys.exit(0)
 
     # Determine dry-run mode:
-    # If --send-real is given -> dry_run = False
+    # If --send-real is given -> check confirmation or exit closed
     # If --dry-run is given -> dry_run = True
-    # Otherwise fallback to config.DRY_RUN (default True)
+    # Otherwise fallback to safe simulation mode
     if args.send_real:
+        env_confirmed = os.getenv("CONFIRM_LIVE_DELIVERY", "").lower() in ("true", "1", "yes") or \
+                        os.getenv("LIVE_DELIVERY_CONFIRMED", "").lower() in ("true", "1", "yes")
+        if not env_confirmed:
+            logger.error(
+                "🚨 [SAFETY REFUSAL] Live SMTP dispatch requested with --send-real, but confirmation "
+                "CONFIRM_LIVE_DELIVERY=true is not set in environment. "
+                "Execution refused: Live email transmission requires explicit safety confirmation. "
+                "Exiting immediately without processing any jobs."
+            )
+            sys.exit(1)
         dry_run = False
         mode_label = "🔴 LIVE SMTP DISPATCH MODE"
     else:
