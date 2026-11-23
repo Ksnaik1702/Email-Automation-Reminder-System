@@ -328,3 +328,98 @@ class CampaignAddRecipientsRequest(BaseModel):
     all_active: Optional[bool] = False
 
 
+# ==========================================
+# PHASE 7: DELIVERY ANALYTICS SCHEMAS
+# ==========================================
+
+class AnalyticsOverviewResponse(BaseModel):
+    """KPI cards summarizing delivery and execution metrics."""
+    total_executions: int = 0
+    simulated_emails: int = 0
+    smtp_accepted: int = 0
+    delivery_confirmed: int = 0
+    failed_emails: int = 0
+    retry_pending: int = 0
+    delivery_uncertain: int = 0
+    skipped_inactive: int = 0
+    skipped_duplicate: int = 0
+    live_total: int = 0
+    delivery_rate: float = 0.0
+    failure_rate: float = 0.0
+
+
+class TrendItem(BaseModel):
+    date: str
+    simulated: int = 0
+    live: int = 0
+    total: int = 0
+
+
+class StatusDistributionItem(BaseModel):
+    status: str
+    count: int = 0
+    percentage: float = 0.0
+
+
+class CampaignPerformanceItem(BaseModel):
+    campaign_id: Optional[int] = None
+    campaign_name: str
+    total_recipients: int = 0
+    total_logged: int = 0
+    simulated: int = 0
+    smtp_accepted: int = 0
+    delivery_confirmed: int = 0
+    failed: int = 0
+    retry_pending: int = 0
+    delivery_uncertain: int = 0
+    skipped_inactive: int = 0
+
+
+class FailureCategoryItem(BaseModel):
+    category: str
+    count: int = 0
+
+
+class TopErrorItem(BaseModel):
+    error_message: str
+    category: Optional[str] = None
+    occurrences: int = 0
+    last_seen: Optional[str] = None
+
+
+class FailureAnalysisResponse(BaseModel):
+    categories: List[FailureCategoryItem] = []
+    top_errors: List[TopErrorItem] = []
+    total_failures: int = 0
+
+
+class ActivityLogItem(BaseModel):
+    id: int
+    recipient_email: str
+    subject: str
+    campaign_id: Optional[int] = None
+    campaign_name: Optional[str] = None
+    reminder_id: Optional[int] = None
+    reminder_title: Optional[str] = None
+    execution_mode: str
+    execution_status: str
+    attempt_count: int
+    error_category: Optional[str] = None
+    error_message: Optional[str] = None
+    message_id: Optional[str] = None
+    smtp_queue_id: Optional[str] = None
+    provider_message_id: Optional[str] = None
+    executed_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RecentActivityResponse(BaseModel):
+    items: List[ActivityLogItem] = []
+    total_count: int = 0
+    page: int = 1
+    page_size: int = 20
+    total_pages: int = 1
+
+
+

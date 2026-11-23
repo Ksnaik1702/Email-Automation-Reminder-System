@@ -504,6 +504,8 @@ export default function CampaignsPage() {
             <a href="/templates" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Templates</a>
             <span style={{ color: '#cbd5e1' }}>/</span>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Campaigns</span>
+            <span style={{ color: '#cbd5e1' }}>/</span>
+            <a href="/analytics" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Analytics</a>
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>Email Campaign Studio</h1>
           <p style={{ color: '#64748b', margin: '4px 0 0 0', fontSize: 14 }}>

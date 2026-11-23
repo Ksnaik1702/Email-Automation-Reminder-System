@@ -162,6 +162,23 @@ export default function Home() {
           Email Campaigns Studio
         </a>
 
+        <a
+          href="/analytics"
+          style={{
+            backgroundColor: '#7c3aed',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: 6,
+            padding: '10px 18px',
+            fontSize: 14,
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center'
+          }}
+        >
+          📊 Delivery Analytics
+        </a>
+
         <button
           onClick={createDemoPipeline}
           disabled={loading}

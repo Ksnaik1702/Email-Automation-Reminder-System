@@ -466,6 +466,56 @@ Safety Note : No real emails will be sent. HTML previews will be generated in ou
 
 ---
 
+## 📈 Phase 7: Delivery Analytics & Reporting Dashboard
+
+The Delivery Analytics & Reporting Dashboard provides enterprise observability into the execution history, campaign performance, error root-causes, and audit logs stored in the centralized SQLite database.
+
+### 1. Dashboard Capabilities
+- **8 Dedicated KPI Metrics:** Total Executions, Simulated Emails, SMTP Accepted, Delivery Confirmed, Failed Emails, Retry Pending, Delivery Uncertain, and Skipped Inactive.
+- **Strict Metric Isolation:** Simulated dry-run executions are strictly isolated from real SMTP relay acceptances. `SMTP_ACCEPTED` is never conflated with `DELIVERY_CONFIRMED`.
+- **Daily Execution Trends:** Timeline view visualizing daily volume with stacked bars distinguishing simulation vs live SMTP traffic.
+- **Status Distribution:** Real-time breakdown of execution outcomes with exact counts and calculated percentages.
+- **Campaign Performance Summary:** Per-campaign table detailing targeted recipients, fulfillment, accepted messages, failures, retries, and uncertain states.
+- **Failure Root-Cause Analysis:** Categorized failure counts (`AUTHENTICATION_ERROR`, `TEMPORARY_NETWORK`, `MAX_RETRIES_EXCEEDED`, etc.) alongside top 10 recurring error diagnostics with last-seen timestamps.
+- **Paginated Audit Trail:** Chronological log table featuring full diagnostic metadata (RFC 5322 `Message-ID`, SMTP queue ID, error details, and attempt counts).
+- **Multi-Dimensional Filters:** Filter dynamically by start date, end date, campaign, execution mode (`SIMULATION` / `LIVE_SMTP`), execution status, and recipient/subject search text.
+
+### 2. REST API Endpoints (`/api/analytics`)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/analytics/overview` | Aggregated KPI metrics (totals, counts by status, live delivery/failure rates) |
+| `GET` | `/api/analytics/trends` | Daily execution counts grouped by calendar date and execution mode |
+| `GET` | `/api/analytics/status-distribution` | Delivery status distribution with counts and percentages |
+| `GET` | `/api/analytics/campaign-performance`| Per-campaign recipient targeting and fulfillment summary |
+| `GET` | `/api/analytics/failures` | Error category breakdown and top 10 recurring failure messages |
+| `GET` | `/api/analytics/recent-activity` | Paginated message log table (supports `page`, `page_size`, and all filters) |
+| `GET` | `/api/analytics/export` | Generates and downloads audit CSV reports respecting active filters |
+
+### 3. CSV Export Reports
+The system provides on-demand CSV exports without exposing SMTP passwords or secrets:
+- **Complete Audit History (`export_type=complete`):**
+  Full message execution log including `Log ID`, `Execution Key`, `Mode`, `Status`, `Recipient Email`, `Subject`, `Campaign Name`, `Attempt Count`, `Error Category`, `RFC 5322 Message-ID`, `SMTP Queue ID`, and `Executed At (UTC)`.
+- **Campaign Performance Summary (`export_type=campaigns`):**
+  Fulfillment metrics per campaign (Targeted, Logged, Simulated, Accepted, Confirmed, Failed, Retrying, Uncertain).
+- **Failed Executions Report (`export_type=failures`):**
+  Isolated failure diagnostics log for fast debugging and post-mortem analysis.
+- **Uncertain Delivery Records (`export_type=uncertain`):**
+  Post-submission timeout records requiring manual gateway verification.
+
+```bash
+# Example: Download complete execution report filtered to live failures
+curl -o failures_audit.csv "http://localhost:8000/api/analytics/export?export_type=failures&execution_mode=LIVE_SMTP"
+```
+
+### 4. UI Dashboard Screenshots
+*(Placeholder section for visual dashboard previews)*
+- **Overview & KPI Grid:** `docs/screenshots/phase7_kpi_overview.png`
+- **Execution Trends & Status Distribution:** `docs/screenshots/phase7_trends_distribution.png`
+- **Campaign Performance & Failure Diagnostics:** `docs/screenshots/phase7_campaign_performance.png`
+- **Paginated Activity Table & CSV Export:** `docs/screenshots/phase7_activity_table.png`
+
+---
+
 ## 🔒 Safe GitHub Best Practices
 
 To ensure complete cybersecurity and compliance when publishing this project on GitHub:
