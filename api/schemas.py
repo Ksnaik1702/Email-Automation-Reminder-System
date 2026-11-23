@@ -6,7 +6,7 @@ import re
 import zoneinfo
 import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 VALID_STATUSES = {"Active", "Inactive", "On Leave", "Terminated"}
@@ -212,4 +212,119 @@ class TemplatePreviewResponse(BaseModel):
     missing_variables: List[str]
     is_valid: bool
     validation_error: Optional[str] = None
+
+
+# ----------------- Campaign Schemas ----------------- #
+
+VALID_CAMPAIGN_STATUSES = ["DRAFT", "READY", "SCHEDULED", "COMPLETED", "CANCELLED"]
+
+
+class CampaignRecipientResponse(BaseModel):
+    id: int
+    campaign_id: int
+    employee_id: int
+    recipient_email: str
+    status: str
+    employee_name: Optional[str] = None
+    department: Optional[str] = None
+    designation: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CampaignBase(BaseModel):
+    campaign_name: str = Field(..., min_length=2, max_length=150, description="Campaign title")
+    description: Optional[str] = Field(None, description="Campaign description / notes")
+    category: Optional[str] = Field("General Announcement", max_length=50)
+    template_id: Optional[int] = Field(None, description="Optional ID of EmailTemplate to use")
+    status: str = Field("DRAFT", description="Campaign lifecycle status")
+    scheduled_at: Optional[datetime.datetime] = Field(None, description="Planned dispatch datetime in UTC")
+
+    @field_validator("status")
+    def validate_campaign_status(cls, v: str) -> str:
+        clean = v.strip().upper()
+        if clean not in VALID_CAMPAIGN_STATUSES:
+            raise ValueError(f"Invalid campaign status '{v}'. Allowed values: {VALID_CAMPAIGN_STATUSES}")
+        return clean
+
+
+class CampaignCreate(CampaignBase):
+    recipient_employee_ids: List[int] = Field(default_factory=list, description="List of employee IDs to target")
+    employee_ids: Optional[List[int]] = Field(None, description="Alias for recipient_employee_ids")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reconcile_employee_ids(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            emp_ids = data.get("employee_ids")
+            recip_ids = data.get("recipient_employee_ids")
+            if emp_ids is not None and not recip_ids:
+                data["recipient_employee_ids"] = emp_ids
+        return data
+
+
+class CampaignUpdate(BaseModel):
+    campaign_name: Optional[str] = Field(None, min_length=2, max_length=150)
+    description: Optional[str] = None
+    category: Optional[str] = None
+    template_id: Optional[int] = None
+    status: Optional[str] = None
+    scheduled_at: Optional[datetime.datetime] = None
+    recipient_employee_ids: Optional[List[int]] = None
+    employee_ids: Optional[List[int]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reconcile_employee_ids(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            emp_ids = data.get("employee_ids")
+            recip_ids = data.get("recipient_employee_ids")
+            if emp_ids is not None and recip_ids is None:
+                data["recipient_employee_ids"] = emp_ids
+        return data
+
+    @field_validator("status")
+    def validate_optional_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            clean = v.strip().upper()
+            if clean not in VALID_CAMPAIGN_STATUSES:
+                raise ValueError(f"Invalid status '{v}'. Allowed: {VALID_CAMPAIGN_STATUSES}")
+            return clean
+        return v
+
+
+class CampaignResponse(CampaignBase):
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    recipient_count: int = 0
+    template_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CampaignDetailResponse(CampaignResponse):
+    template: Optional[EmailTemplateResponse] = None
+    recipients: List[CampaignRecipientResponse] = []
+
+
+class CampaignListResponse(BaseModel):
+    items: List[CampaignResponse]
+    total: int
+
+
+class CampaignStatsResponse(BaseModel):
+    total_campaigns: int
+    draft_campaigns: int
+    ready_campaigns: int
+    scheduled_campaigns: int
+    completed_campaigns: int
+    total_recipients_targeted: int
+
+
+class CampaignAddRecipientsRequest(BaseModel):
+    employee_ids: Optional[List[int]] = None
+    department: Optional[str] = None
+    all_active: Optional[bool] = False
+
 

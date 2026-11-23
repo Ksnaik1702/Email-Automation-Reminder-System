@@ -13,6 +13,7 @@ from db.database import get_connection, init_db
 from src.webhooks import router as tracking_router
 from api.routes.employees import router as employees_router
 from api.routes.templates import router as templates_router
+from api.routes.campaigns import router as campaigns_router
 from src.scheduler import dispatch_batch
 from src.data_loader import validate_email
 
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(tracking_router)
 app.include_router(employees_router)
 app.include_router(templates_router)
+app.include_router(campaigns_router)
 
 # ----------------- Schemas ----------------- #
 class ContactCreate(BaseModel):
