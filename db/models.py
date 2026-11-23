@@ -139,8 +139,12 @@ class MessageLog(Base):
     execution_mode = Column(String(20), default="SIMULATION", nullable=False)  # SIMULATION or LIVE_SMTP
     attempt_count = Column(Integer, default=1, nullable=False)
     smtp_response = Column(String(255), nullable=True)
-    # provider_message_id stores the locally generated RFC 5322 Message-ID (or provider-assigned ID if confirmed via webhook).
-    # NOTE: Standard direct SMTP servers (e.g. Gmail SMTP) do not return a distinct provider ID over standard SMTP.
+    # Distinct message identifiers:
+    # 1. message_id: Locally generated RFC 5322 Message-ID (<uuid@domain>) created client-side.
+    # 2. smtp_queue_id: SMTP server queue ID parsed from MTA 250 OK response (if returned).
+    # 3. provider_message_id: Provider-assigned ID (API/webhooks only; NULL for direct SMTP).
+    message_id = Column(String(150), nullable=True)
+    smtp_queue_id = Column(String(150), nullable=True)
     provider_message_id = Column(String(150), nullable=True)
     error_category = Column(String(50), nullable=True)
     error_message = Column(Text, nullable=True)

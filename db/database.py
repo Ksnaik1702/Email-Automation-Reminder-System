@@ -71,6 +71,8 @@ def init_db():
                     ("execution_mode", "VARCHAR(20) DEFAULT 'SIMULATION' NOT NULL"),
                     ("attempt_count", "INTEGER DEFAULT 1 NOT NULL"),
                     ("smtp_response", "VARCHAR(255)"),
+                    ("message_id", "VARCHAR(150)"),
+                    ("smtp_queue_id", "VARCHAR(150)"),
                     ("provider_message_id", "VARCHAR(150)"),
                     ("error_category", "VARCHAR(50)"),
                     ("next_retry_at", "DATETIME")
@@ -79,6 +81,17 @@ def init_db():
                 for col_name, col_def in migrations:
                     if col_name not in existing_cols:
                         cursor.execute(f"ALTER TABLE message_logs ADD COLUMN {col_name} {col_def}")
+
+                # Non-destructive data migration:
+                # If provider_message_id contains a locally generated RFC 5322 Message-ID (<...@...>),
+                # move it to message_id and set provider_message_id to NULL.
+                cursor.execute("""
+                    UPDATE message_logs
+                    SET message_id = provider_message_id, provider_message_id = NULL
+                    WHERE (message_id IS NULL OR message_id = '')
+                      AND provider_message_id IS NOT NULL
+                      AND (provider_message_id LIKE '<%@%>' OR provider_message_id LIKE '%@%')
+                """)
                 conn.connection.commit()
                 cursor.close()
         except Exception:

@@ -116,7 +116,8 @@ class SMTPDeliveryResult(NamedTuple):
       NOTE: Standard direct SMTP connections (including Gmail SMTP) do NOT return a distinct
       provider-generated message ID during the SMTP dialog.
     - smtp_queue_id: Server-assigned queue identifier if returned in the SMTP 250 response line.
-    - provider_id: Provider-specific message ID (available only via provider HTTP APIs or webhooks).
+    - provider_message_id: Provider-specific message ID (available only via provider HTTP APIs or webhooks).
+    - provider_id: Alias for provider_message_id for backward compatibility.
     """
     status: str                       # SIMULATED_SUCCESS, SMTP_ACCEPTED, FAILED, RETRY_PENDING, SKIPPED_INACTIVE, DELIVERY_UNCERTAIN
     message_id: Optional[str]         # Locally generated RFC 5322 Message-ID
@@ -126,8 +127,9 @@ class SMTPDeliveryResult(NamedTuple):
     attempt: int
     retry_after_seconds: Optional[int]
     next_retry_at: Optional[datetime.datetime]
-    smtp_queue_id: Optional[str] = None  # Server queue identifier if parsed from 250 OK
-    provider_id: Optional[str] = None    # Provider-assigned ID (API/webhooks only; None in direct SMTP)
+    smtp_queue_id: Optional[str] = None          # Server queue identifier if parsed from 250 OK
+    provider_message_id: Optional[str] = None    # Provider-assigned ID (API/webhooks only; None in direct SMTP)
+    provider_id: Optional[str] = None            # Backward compatibility alias
 
 
 class SMTPClient:
@@ -333,7 +335,8 @@ class SMTPClient:
                 retry_after_seconds=None,
                 next_retry_at=None,
                 smtp_queue_id=parse_smtp_queue_id(resp_str),
-                provider_id=None  # Standard direct SMTP does not return a provider-assigned ID
+                provider_message_id=None,  # Standard direct SMTP does not return a provider-assigned ID
+                provider_id=None
             )
 
         # ----------------- Permanent Failures (Never Retried) ----------------- #

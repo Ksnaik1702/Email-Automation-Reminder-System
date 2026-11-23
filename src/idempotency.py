@@ -107,6 +107,8 @@ def record_execution(
     execution_mode: str = "SIMULATION",
     attempt_count: int = 1,
     smtp_response: Optional[str] = None,
+    message_id: Optional[str] = None,
+    smtp_queue_id: Optional[str] = None,
     provider_message_id: Optional[str] = None,
     error_category: Optional[str] = None,
     error_message: Optional[str] = None,
@@ -132,7 +134,12 @@ def record_execution(
         existing.execution_mode = execution_mode
         existing.attempt_count = attempt_count
         existing.smtp_response = smtp_response
-        existing.provider_message_id = provider_message_id
+        if message_id is not None or existing.message_id is None:
+            existing.message_id = message_id
+        if smtp_queue_id is not None or existing.smtp_queue_id is None:
+            existing.smtp_queue_id = smtp_queue_id
+        if provider_message_id is not None or existing.provider_message_id is None:
+            existing.provider_message_id = provider_message_id
         existing.error_category = error_category
         existing.error_message = error_message
         existing.next_retry_at = next_retry_at
@@ -156,6 +163,8 @@ def record_execution(
         execution_mode=execution_mode,
         attempt_count=attempt_count,
         smtp_response=smtp_response,
+        message_id=message_id,
+        smtp_queue_id=smtp_queue_id,
         provider_message_id=provider_message_id,
         error_category=error_category,
         error_message=error_message,

@@ -17,7 +17,8 @@ from db.database import SessionLocal, init_db
 from db.models import Employee, EmailTemplate, Campaign, CampaignRecipient, ReminderJob, MessageLog
 from src.smtp_client import SMTPClient, SMTPConfig, SMTPDeliveryResult, SMTPAwaitingResponseError
 from src.services import scheduling_service
-from src.idempotency import generate_campaign_execution_key, is_already_executed
+from src.services.scheduling_service import process_pending_retries
+from src.idempotency import generate_campaign_execution_key, is_already_executed, record_execution
 from src.worker import BackgroundWorker
 from api.routes.scheduler import verify_smtp_connection, trigger_scheduler_cycle
 
@@ -268,7 +269,8 @@ class TestPhase6DeliveryEngine(unittest.TestCase):
         self.assertEqual(log.execution_mode, "LIVE_SMTP")
         self.assertEqual(log.execution_status, "SMTP_ACCEPTED")
         self.assertEqual(log.attempt_count, 1)
-        self.assertIsNotNone(log.provider_message_id)
+        self.assertIsNotNone(log.message_id)  # Locally generated RFC 5322 Message-ID
+        self.assertIsNone(log.provider_message_id)  # Standard direct SMTP leaves provider_message_id NULL
         self.assertIn("250 Message accepted", log.smtp_response)
         self.assertIsNone(log.error_category)
         self.assertIsNone(log.next_retry_at)
@@ -475,12 +477,13 @@ class TestPhase6DeliveryEngine(unittest.TestCase):
             employee_id=self.active_emp.id
         ).first()
 
-        # Check 18 distinct model attributes
+        # Check 20 distinct model attributes (including separated message identifiers)
         expected_fields = [
             "id", "campaign_id", "reminder_id", "employee_id", "template_id",
             "recipient_email", "subject", "execution_key", "execution_mode",
             "execution_status", "attempt_count", "smtp_response",
-            "provider_message_id", "error_category", "error_message",
+            "message_id", "smtp_queue_id", "provider_message_id",
+            "error_category", "error_message",
             "scheduled_at", "executed_at", "next_retry_at"
         ]
         for field in expected_fields:
@@ -493,6 +496,8 @@ class TestPhase6DeliveryEngine(unittest.TestCase):
         self.assertEqual(log.execution_mode, "LIVE_SMTP")
         self.assertEqual(log.execution_status, "SMTP_ACCEPTED")
         self.assertEqual(log.attempt_count, 1)
+        self.assertIsNotNone(log.message_id)  # RFC 5322 Message-ID
+        self.assertIsNone(log.provider_message_id)  # NULL in direct SMTP
 
     # --------------------------------------------------------------------------
     # TEST 9: API Verify SMTP Connection Endpoint
@@ -569,7 +574,8 @@ class TestPhase6DeliveryEngine(unittest.TestCase):
         self.assertEqual(log.execution_status, "DELIVERY_UNCERTAIN")
         self.assertEqual(log.error_category, "DELIVERY_UNCERTAIN")
         self.assertIsNone(log.next_retry_at)  # Must NEVER automatically retry an uncertain outcome
-        self.assertIsNotNone(log.provider_message_id)  # Message-ID preserved for downstream tracing
+        self.assertIsNotNone(log.message_id)  # RFC 5322 Message-ID preserved for downstream tracing
+        self.assertIsNone(log.provider_message_id)  # Kept NULL for direct SMTP
 
     # --------------------------------------------------------------------------
     # TEST 12: Uncertain Outcome Is Never Automatically Retried
@@ -688,6 +694,155 @@ class TestPhase6DeliveryEngine(unittest.TestCase):
         # Attempt 3: 60 * 2^2 = 240s -> Capped at 180s!
         res3 = client.send_live_email("kiran.patel@testcorp.com", "Sub", "<p>Body</p>", attempt=3)
         self.assertEqual(res3.retry_after_seconds, 180)
+
+    # --------------------------------------------------------------------------
+    # TEST 16: Manual Recovery Option A - SQLite Re-Queueing & Successful Reprocessing
+    # --------------------------------------------------------------------------
+    def test_16_manual_recovery_option_a_reprocessing_end_to_end(self):
+        """
+        End-to-end verification of documented Option A manual recovery procedure:
+        1. Create a DELIVERY_UNCERTAIN record.
+        2. Confirm it is blocked from automatic retry.
+        3. Apply Option A SQL: UPDATE message_logs SET execution_status = 'RETRY_PENDING', next_retry_at = CURRENT_TIMESTAMP WHERE id = ...
+        4. Confirm worker reprocesses the record.
+        5. Confirm unique execution key does not block legitimate re-attempt.
+        6. Confirm existing audit record is updated in-place with attempt count incremented.
+        7. Ensure no duplicate MessageLog record is created.
+        """
+        from sqlalchemy import text
+        exec_key = "test_opt_a_e2e_recovery_key_123"
+
+        # 1. Create DELIVERY_UNCERTAIN record
+        uncertain_log = MessageLog(
+            execution_key=exec_key,
+            recipient_email=self.active_emp.email,
+            subject="Urgent Security Advisory",
+            execution_mode="LIVE_SMTP",
+            execution_status="DELIVERY_UNCERTAIN",
+            attempt_count=1,
+            message_id="<orig-uncertain-uuid@testcorp.com>",
+            smtp_response="UNKNOWN_TIMEOUT_POST_SUBMISSION",
+            error_category="DELIVERY_UNCERTAIN",
+            error_message="Socket timeout awaiting 250 OK after payload transmission",
+            next_retry_at=None,
+            executed_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        self.session.add(uncertain_log)
+        self.session.commit()
+        record_id = uncertain_log.id
+
+        # 2. Confirm automatic retry loop skips it
+        mock_client = MagicMock()
+        reprocessed = process_pending_retries(self.session, smtp_client=mock_client)
+        self.assertEqual(reprocessed, 0)
+        self.assertTrue(is_already_executed(self.session, exec_key))
+
+        # 3. Apply documented Option A SQL
+        self.session.execute(
+            text(f"UPDATE message_logs SET execution_status = 'RETRY_PENDING', next_retry_at = CURRENT_TIMESTAMP WHERE id = {record_id}")
+        )
+        self.session.commit()
+
+        # 4. Confirm idempotency guard does not block the legitimate retry
+        self.assertFalse(is_already_executed(self.session, exec_key))
+
+        # 5. Configure mock SMTP client to accept the re-attempt
+        mock_client.send_live_email.return_value = SMTPDeliveryResult(
+            status="SMTP_ACCEPTED",
+            message_id="<retry-accepted-uuid@testcorp.com>",
+            smtp_response="250 2.0.0 OK: queued as 4S9XYZ123",
+            error_category=None,
+            error_message=None,
+            attempt=2,
+            retry_after_seconds=None,
+            next_retry_at=None,
+            smtp_queue_id="4S9XYZ123",
+            provider_message_id=None
+        )
+
+        # 6. Worker reprocesses the record
+        reprocessed = process_pending_retries(self.session, smtp_client=mock_client)
+        self.assertEqual(reprocessed, 1)
+
+        # 7. Verify existing record was updated in-place with new attempt count and identifiers
+        reloaded = self.session.query(MessageLog).filter_by(execution_key=exec_key).first()
+        self.assertEqual(reloaded.id, record_id)
+        self.assertEqual(reloaded.execution_status, "SMTP_ACCEPTED")
+        self.assertEqual(reloaded.attempt_count, 2)
+        self.assertEqual(reloaded.message_id, "<retry-accepted-uuid@testcorp.com>")
+        self.assertEqual(reloaded.smtp_queue_id, "4S9XYZ123")
+        self.assertIsNone(reloaded.provider_message_id)
+
+        # 8. Ensure no duplicate MessageLog record was created
+        total_for_key = self.session.query(MessageLog).filter_by(execution_key=exec_key).count()
+        self.assertEqual(total_for_key, 1)
+
+    # --------------------------------------------------------------------------
+    # TEST 17: Manual Recovery Option B - Finalize Independently Confirmed Delivery
+    # --------------------------------------------------------------------------
+    def test_17_manual_recovery_option_b_confirmation_end_to_end(self):
+        """
+        End-to-end verification of documented Option B manual recovery procedure:
+        1. Create a DELIVERY_UNCERTAIN record.
+        2. Apply Option B SQL: UPDATE message_logs SET execution_status = 'DELIVERY_CONFIRMED' WHERE id = ...
+        3. Confirm record transitions to DELIVERY_CONFIRMED.
+        4. Confirm idempotency guard treats it as permanently executed.
+        5. Confirm process_pending_retries never touches it.
+        6. Confirm duplicate insertion via record_execution is safely rejected.
+        """
+        from sqlalchemy import text
+        exec_key = "test_opt_b_e2e_confirmation_key_456"
+
+        # 1. Create DELIVERY_UNCERTAIN record
+        uncertain_log = MessageLog(
+            execution_key=exec_key,
+            recipient_email=self.active_emp.email,
+            subject="All-Hands Meeting",
+            execution_mode="LIVE_SMTP",
+            execution_status="DELIVERY_UNCERTAIN",
+            attempt_count=1,
+            message_id="<confirmed-later-uuid@testcorp.com>",
+            smtp_response="UNKNOWN_TIMEOUT_POST_SUBMISSION",
+            next_retry_at=None,
+            executed_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        self.session.add(uncertain_log)
+        self.session.commit()
+        record_id = uncertain_log.id
+
+        # 2. Apply documented Option B SQL
+        self.session.execute(
+            text(f"UPDATE message_logs SET execution_status = 'DELIVERY_CONFIRMED' WHERE id = {record_id}")
+        )
+        self.session.commit()
+
+        # 3. Confirm status is DELIVERY_CONFIRMED
+        reloaded = self.session.query(MessageLog).filter_by(id=record_id).first()
+        self.assertEqual(reloaded.execution_status, "DELIVERY_CONFIRMED")
+
+        # 4. Confirm idempotency guard blocks duplicate executions
+        self.assertTrue(is_already_executed(self.session, exec_key))
+
+        # 5. Confirm process_pending_retries does not process it
+        mock_client = MagicMock()
+        reprocessed = process_pending_retries(self.session, smtp_client=mock_client)
+        self.assertEqual(reprocessed, 0)
+        mock_client.send_live_email.assert_not_called()
+
+        # 6. Confirm duplicate record_execution insert is safely blocked
+        recorded, err = record_execution(
+            session=self.session,
+            execution_key=exec_key,
+            recipient_email=self.active_emp.email,
+            subject="All-Hands Meeting",
+            status="SIMULATED_SUCCESS"
+        )
+        self.assertFalse(recorded)
+        self.assertIn("Duplicate execution blocked", err)
+
+        # 7. Confirm strictly 1 record exists
+        total_records = self.session.query(MessageLog).filter_by(execution_key=exec_key).count()
+        self.assertEqual(total_records, 1)
 
 
 if __name__ == "__main__":

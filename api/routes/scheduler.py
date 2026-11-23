@@ -28,7 +28,7 @@ def get_scheduler_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
     pending_campaigns = db.query(Campaign).filter(Campaign.status.in_(["READY", "SCHEDULED"])).count()
     active_reminders = db.query(ReminderJob).filter(ReminderJob.status == "Active").count()
     total_executions = db.query(MessageLog).count()
-    pending_retries = db.query(MessageLog).filter(MessageLog.status == "RETRY_PENDING").count()
+    pending_retries = db.query(MessageLog).filter(MessageLog.execution_status == "RETRY_PENDING").count()
 
     smtp_config = SMTPConfig.from_env()
     is_valid, _ = smtp_config.validate()

@@ -329,7 +329,9 @@ def process_due_campaign(
                 execution_mode="LIVE_SMTP",
                 attempt_count=delivery_res.attempt,
                 smtp_response=delivery_res.smtp_response,
-                provider_message_id=delivery_res.message_id,
+                message_id=delivery_res.message_id,
+                smtp_queue_id=delivery_res.smtp_queue_id,
+                provider_message_id=delivery_res.provider_message_id,
                 error_category=delivery_res.error_category,
                 error_message=delivery_res.error_message,
                 next_retry_at=delivery_res.next_retry_at
@@ -516,7 +518,9 @@ def process_due_reminder(
                 execution_mode="LIVE_SMTP",
                 attempt_count=delivery_res.attempt,
                 smtp_response=delivery_res.smtp_response,
-                provider_message_id=delivery_res.message_id,
+                message_id=delivery_res.message_id,
+                smtp_queue_id=delivery_res.smtp_queue_id,
+                provider_message_id=delivery_res.provider_message_id,
                 error_category=delivery_res.error_category,
                 error_message=delivery_res.error_message,
                 next_retry_at=delivery_res.next_retry_at
@@ -606,7 +610,9 @@ def process_pending_retries(
             execution_mode="LIVE_SMTP",
             attempt_count=delivery_res.attempt,
             smtp_response=delivery_res.smtp_response,
-            provider_message_id=delivery_res.message_id,
+            message_id=delivery_res.message_id,
+            smtp_queue_id=delivery_res.smtp_queue_id,
+            provider_message_id=delivery_res.provider_message_id,
             error_category=delivery_res.error_category,
             error_message=delivery_res.error_message,
             next_retry_at=delivery_res.next_retry_at
