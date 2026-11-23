@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f0fdf4; margin: 0; padding: 20px; color: #1e293b; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #dcfce7; }
+    .header { background: linear-gradient(135deg, #059669, #10b981); color: #ffffff; padding: 24px; text-align: center; }
+    .header h1 { margin: 0; font-size: 22px; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; background: #d1fae5; color: #065f46; margin-top: 8px; }
+    .content { padding: 28px 24px; line-height: 1.6; }
+    .info-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 16px; margin: 18px 0; }
+    .btn { display: inline-block; background: #059669; color: #ffffff !important; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; margin-top: 10px; }
+    .footer { background: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎓 Live Masterclass / Webinar Reminder</h1>
+      <span class="badge">Session Alert &bull; {{ priority }}</span>
+    </div>
+    <div class="content">
+      <p>Hi <strong>{{ name }}</strong>,</p>
+      <p>Get ready! Your scheduled learning session is about to begin soon.</p>
+      
+      <div class="info-box">
+        <h3 style="margin-top: 0; color: #047857;">{{ title }}</h3>
+        <p><strong>Scheduled Time:</strong> {{ due_date }} at {{ due_time }} ({{ timezone }})</p>
+        <p><strong>Special Instructions:</strong> {{ notes }}</p>
+      </div>
+
+      <p>Join on your computer or mobile device using the link below:</p>
+      <div style="text-align: center;">
+        <a href="{{ meeting_link }}" class="btn">Launch Live Session</a>
+      </div>
+    </div>
+    <div class="footer">
+      Automated Learning Management &bull; Email Automation &amp; Reminder System
+    </div>
+  </div>
+</body>
+</html>

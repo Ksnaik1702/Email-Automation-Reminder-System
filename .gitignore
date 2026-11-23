@@ -1,0 +1,29 @@
+# Environment variables & secrets (CRITICAL: Never commit credentials)
+.env
+*.env
+*.key
+credentials.json
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Output previews & logs
+logs/*.log
+!logs/.gitkeep
+outputs/previews/*.html
+!outputs/previews/.gitkeep
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

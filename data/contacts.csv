@@ -1,0 +1,6 @@
+contact_id,name,email,company,role,department,timezone
+C101,Aarav Sharma,aarav.sharma@example.com,Nexus Tech,Data Analyst,Analytics,Asia/Kolkata
+C102,Priya Patel,priya.patel@example.com,FinEdge Corp,Finance Officer,Accounts,Asia/Kolkata
+C103,Rohan Verma,rohan.verma@example.com,CloudScale,DevOps Engineer,Infrastructure,Asia/Kolkata
+C104,Sneha Kulkarni,sneha.kulkarni@example.com,TalentHub,HR Executive,People Operations,Asia/Kolkata
+C105,Vikram Singh,vikram.singh@example.com,GrowthLabs,Product Manager,Growth,Asia/Kolkata

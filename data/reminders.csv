@@ -1,0 +1,6 @@
+reminder_id,contact_id,category,title,due_date,due_time,priority,template_name,amount_due,meeting_link,notes
+R201,C101,Meeting,Sprint Planning & Retro,2026-11-24,10:00 AM,High,meeting_reminder.html,0,https://meet.google.com/abc-defg-hij,Review Q4 analytics deliverables
+R202,C102,Payment,Invoice #INV-8821 Payment Due,2026-11-25,05:00 PM,Critical,payment_due_reminder.html,45000,N/A,Quarterly software subscription renewal
+R203,C103,Webinar,Kubernetes at Scale Masterclass,2026-11-26,07:00 PM,Medium,class_webinar_reminder.html,0,https://zoom.us/j/987654321,Hands-on lab materials attached
+R204,C104,HR Task,Q4 Performance Appraisal Submission,2026-11-27,06:00 PM,High,meeting_reminder.html,0,https://internal-portal.company.com,Submit self-evaluation by 6 PM
+R205,C105,Payment,Vendor Retainer Clearance #INV-9042,2026-11-28,04:00 PM,Critical,payment_due_reminder.html,78500,N/A,Approved by procurement team
