@@ -289,6 +289,10 @@ class TestPhase1DatabaseArchitecture(unittest.TestCase):
 
         key = generate_execution_key(reminder_id, recipient, sched_time)
 
+        # Pre-test cleanup in case previous run aborted
+        self.session.query(MessageLog).filter_by(execution_key=key).delete()
+        self.session.commit()
+
         # 1st Scheduler Tick: Occurrence has not been executed yet
         self.assertFalse(is_already_executed(self.session, key))
         success, err = record_execution(

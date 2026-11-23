@@ -132,23 +132,32 @@ class MessageLog(Base):
     campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True)
     reminder_id = Column(Integer, ForeignKey("reminder_jobs.id", ondelete="SET NULL"), nullable=True, index=True)
     employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
+    template_id = Column(Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True, index=True)
     recipient_email = Column(String(150), nullable=False)
     subject = Column(String(255), nullable=False)
-    execution_status = Column(String(30), nullable=False)  # SENT, FAILED, SIMULATED_SUCCESS, SKIPPED_DUPLICATE
+    execution_status = Column(String(30), nullable=False)  # SIMULATED_SUCCESS, SMTP_ACCEPTED, FAILED, RETRY_PENDING, SKIPPED_DUPLICATE, SKIPPED_INACTIVE, DELIVERY_CONFIRMED, BOUNCED
+    execution_mode = Column(String(20), default="SIMULATION", nullable=False)  # SIMULATION or LIVE_SMTP
+    attempt_count = Column(Integer, default=1, nullable=False)
+    smtp_response = Column(String(255), nullable=True)
+    provider_message_id = Column(String(150), nullable=True)
+    error_category = Column(String(50), nullable=True)
+    error_message = Column(Text, nullable=True)
+    next_retry_at = Column(DateTime, nullable=True)
     scheduled_at = Column(DateTime, nullable=True)
     executed_at = Column(DateTime, default=utc_now, nullable=False)
-    error_message = Column(Text, nullable=True)
     execution_key = Column(String(100), unique=True, nullable=False, index=True)
 
     __table_args__ = (
         UniqueConstraint("execution_key", name="uq_message_execution_key"),
         Index("idx_message_logs_executed_at", "executed_at"),
+        Index("idx_message_logs_status", "execution_status"),
     )
 
     # Relationships
     campaign = relationship("Campaign", back_populates="message_logs")
     reminder_job = relationship("ReminderJob", back_populates="message_logs")
     employee = relationship("Employee", back_populates="message_logs")
+    template = relationship("EmailTemplate")
 
     def __repr__(self):
         return f"<MessageLog(id={self.id}, email='{self.recipient_email}', status='{self.execution_status}')>"

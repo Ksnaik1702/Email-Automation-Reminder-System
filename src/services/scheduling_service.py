@@ -3,6 +3,7 @@ Scheduling Service Layer: Engine for identifying due campaigns and reminders,
 claiming jobs safely, rendering personalized content via Jinja2 sandboxing,
 enforcing SHA-256 idempotency, advancing calendar-aware recurrences, and recording
 execution logs into SQLite as the single source of truth.
+Supports both Virtual Simulation Mode and Live SMTP Delivery Mode with exponential backoff retries.
 """
 import os
 import re
@@ -21,6 +22,7 @@ from src.idempotency import (
     generate_execution_key, generate_campaign_execution_key,
     is_already_executed, record_execution, normalize_recipient_email
 )
+from src.smtp_client import SMTPClient, SMTPConfig, SMTPDeliveryResult
 from src.services import template_service
 from src.logger import logger
 
@@ -131,17 +133,20 @@ def get_due_reminders(
 def process_due_campaign(
     db: Session,
     campaign: Campaign,
-    simulation_mode: bool = True
+    simulation_mode: bool = True,
+    smtp_client: Optional[SMTPClient] = None
 ) -> Dict[str, Any]:
     """
     Executes a single due campaign:
     1. Claims the campaign by setting status='PROCESSING'.
     2. Loads template and validates existence.
     3. Iterates over targeted recipients.
-    4. Evaluates SHA-256 idempotency key per recipient.
-    5. Renders personalized email with Jinja2 sandboxing.
-    6. In simulation mode: outputs HTML preview and records SIMULATED_SUCCESS.
-    7. Updates CampaignRecipient.status and Campaign.status='COMPLETED'.
+    4. Enforces safety checks (skips inactive/unsubscribed employees).
+    5. Evaluates SHA-256 idempotency key per recipient.
+    6. Renders personalized email with Jinja2 sandboxing.
+    7. In simulation mode: outputs HTML preview and records SIMULATED_SUCCESS.
+    8. In live mode: sends via SMTP, records SMTP_ACCEPTED / RETRY_PENDING.
+    9. Updates CampaignRecipient.status and Campaign.status='COMPLETED'.
     """
     stats = {
         "campaign_id": campaign.id,
@@ -150,10 +155,26 @@ def process_due_campaign(
         "dispatched": 0,
         "simulated": 0,
         "skipped_duplicate": 0,
+        "skipped_inactive": 0,
+        "retry_pending": 0,
         "errors": []
     }
 
-    logger.info(f"Processing Campaign ID={campaign.id} ('{campaign.campaign_name}') with {len(campaign.recipients)} recipients...")
+    mode_label = "SIMULATION" if simulation_mode else "LIVE_SMTP"
+    logger.info(f"Processing Campaign ID={campaign.id} ('{campaign.campaign_name}') in [{mode_label}] mode with {len(campaign.recipients)} recipients...")
+
+    # Validate live mode prerequisites
+    if not simulation_mode:
+        if not smtp_client:
+            smtp_client = SMTPClient()
+        valid_cfg, cfg_err = smtp_client.config.validate()
+        if not valid_cfg:
+            err = f"Live SMTP execution refused: {cfg_err}"
+            logger.error(err)
+            campaign.status = "FAILED"
+            db.commit()
+            stats["errors"].append(err)
+            raise ValueError(err)
 
     # 1. Claim job state
     campaign.status = "PROCESSING"
@@ -183,14 +204,35 @@ def process_due_campaign(
         recip_email = normalize_recipient_email(recipient.recipient_email)
         exec_key = generate_campaign_execution_key(campaign.id, recip_email, scheduled_timestamp)
 
-        # 2. Idempotency Check
+        # 2. Safety Check: Inactive / Unsubscribed Employees
+        emp = recipient.employee
+        if emp and emp.employment_status and emp.employment_status.strip().capitalize() not in ("Active", ""):
+            logger.warning(f"[SAFETY CONTROL] Skipping inactive employee ID={emp.employee_id} ('{emp.full_name}', Status='{emp.employment_status}')")
+            recipient.status = "Skipped_Inactive"
+            stats["skipped_inactive"] += 1
+            record_execution(
+                session=db,
+                execution_key=exec_key,
+                recipient_email=recip_email,
+                subject=template.subject,
+                status="SKIPPED_INACTIVE",
+                campaign_id=campaign.id,
+                employee_id=recipient.employee_id,
+                template_id=template.id,
+                scheduled_at=scheduled_timestamp,
+                execution_mode=mode_label,
+                error_message=f"Employee status is '{emp.employment_status}'. Required: 'Active'."
+            )
+            continue
+
+        # 3. Idempotency Check
         if is_already_executed(db, exec_key):
             logger.info(f"[IDEMPOTENCY] Skipping duplicate occurrence for campaign {campaign.id} to '{recip_email}' (key={exec_key[:12]}...)")
             recipient.status = "Skipped_Duplicate"
             stats["skipped_duplicate"] += 1
             continue
 
-        # 3. Render Personalized Email
+        # 4. Render Personalized Email
         try:
             preview = template_service.render_template_preview(
                 db=db,
@@ -212,9 +254,9 @@ def process_due_campaign(
             stats["errors"].append(err_msg)
             continue
 
-        # 4. Dispatch or Simulate
+        # 5. Dispatch or Simulate
         if simulation_mode:
-            # Virtual Simulation Mode
+            # Virtual Simulation Mode (Default)
             sim_filename = f"campaign_{campaign.id}_emp_{recipient.employee_id}_{recip_email}.html"
             preview_path = save_simulation_preview(
                 filename=sim_filename,
@@ -241,7 +283,10 @@ def process_due_campaign(
                 status="SIMULATED_SUCCESS",
                 campaign_id=campaign.id,
                 employee_id=recipient.employee_id,
-                scheduled_at=scheduled_timestamp
+                template_id=template.id,
+                scheduled_at=scheduled_timestamp,
+                execution_mode="SIMULATION",
+                attempt_count=1
             )
 
             if recorded:
@@ -254,32 +299,80 @@ def process_due_campaign(
                 logger.warning(f"[IDEMPOTENCY] Database blocked duplicate insert: {rec_err}")
 
         else:
-            # Live delivery reserved for Phase 6
-            # In Phase 5, safety default blocks live execution
-            raise NotImplementedError("Live SMTP delivery is not enabled in Phase 5. Use simulation_mode=True.")
+            # Live SMTP Delivery Mode
+            custom_headers = {
+                "X-Campaign-ID": str(campaign.id),
+                "X-Employee-ID": str(recipient.employee_id),
+                "X-Execution-Key": exec_key
+            }
 
-    # 5. Mark campaign complete
+            delivery_res = smtp_client.send_live_email(
+                to_email=recip_email,
+                subject=preview.rendered_subject,
+                html_content=preview.rendered_html,
+                plain_text=preview.plain_text_fallback,
+                attempt=1,
+                custom_headers=custom_headers
+            )
+
+            record_execution(
+                session=db,
+                execution_key=exec_key,
+                recipient_email=recip_email,
+                subject=preview.rendered_subject,
+                status=delivery_res.status,
+                campaign_id=campaign.id,
+                employee_id=recipient.employee_id,
+                template_id=template.id,
+                scheduled_at=scheduled_timestamp,
+                execution_mode="LIVE_SMTP",
+                attempt_count=delivery_res.attempt,
+                smtp_response=delivery_res.smtp_response,
+                provider_message_id=delivery_res.message_id,
+                error_category=delivery_res.error_category,
+                error_message=delivery_res.error_message,
+                next_retry_at=delivery_res.next_retry_at
+            )
+
+            if delivery_res.status == "SMTP_ACCEPTED":
+                recipient.status = "Accepted"
+                stats["dispatched"] += 1
+            elif delivery_res.status == "RETRY_PENDING":
+                recipient.status = "Retry_Pending"
+                stats["retry_pending"] += 1
+            else:
+                recipient.status = "Failed"
+                stats["errors"].append(delivery_res.error_message or "SMTP delivery failed")
+
+    # 6. Mark campaign complete
     campaign.status = "COMPLETED"
     campaign.updated_at = utc_now()
     db.commit()
 
-    logger.info(f"Campaign ID={campaign.id} completed: Simulated={stats['simulated']}, Skipped={stats['skipped_duplicate']}, Errors={len(stats['errors'])}")
+    logger.info(
+        f"Campaign ID={campaign.id} completed: Simulated={stats['simulated']}, "
+        f"Dispatched={stats['dispatched']}, Inactive={stats['skipped_inactive']}, "
+        f"Duplicates={stats['skipped_duplicate']}, Retries={stats['retry_pending']}, "
+        f"Errors={len(stats['errors'])}"
+    )
     return stats
 
 
 def process_due_reminder(
     db: Session,
     reminder: ReminderJob,
-    simulation_mode: bool = True
+    simulation_mode: bool = True,
+    smtp_client: Optional[SMTPClient] = None
 ) -> Dict[str, Any]:
     """
     Executes a single due reminder occurrence:
-    1. Validates employee existence.
-    2. Generates deterministic SHA-256 idempotency key for this exact scheduled occurrence.
+    1. Validates employee existence and active status.
+    2. Generates deterministic SHA-256 idempotency key for this exact occurrence.
     3. Checks MessageLog for duplicate prevention.
     4. Renders content.
     5. In simulation mode: outputs preview file and records SIMULATED_SUCCESS.
-    6. Advances recurring schedules (Daily, Weekly, Monthly) to the next UTC occurrence,
+    6. In live mode: delivers via SMTP and records SMTP_ACCEPTED / RETRY_PENDING.
+    7. Advances recurring schedules (Daily, Weekly, Monthly) to the next UTC occurrence,
        or marks one-time reminders as 'Completed'.
     """
     stats = {
@@ -288,6 +381,8 @@ def process_due_reminder(
         "status": "Pending",
         "error": None
     }
+
+    mode_label = "SIMULATION" if simulation_mode else "LIVE_SMTP"
 
     emp = reminder.employee
     if not emp:
@@ -302,6 +397,26 @@ def process_due_reminder(
     scheduled_utc = reminder.scheduled_at
     exec_key = generate_execution_key(reminder.id, recip_email, scheduled_utc, job_type="reminder")
 
+    # Safety check: Inactive / Unsubscribed employee
+    if emp.employment_status and emp.employment_status.strip().capitalize() not in ("Active", ""):
+        logger.warning(f"[SAFETY CONTROL] Skipping inactive reminder recipient ID={emp.employee_id} ({emp.full_name}, Status='{emp.employment_status}')")
+        record_execution(
+            session=db,
+            execution_key=exec_key,
+            recipient_email=recip_email,
+            subject=f"Reminder: {reminder.reminder_title}",
+            status="SKIPPED_INACTIVE",
+            reminder_id=reminder.id,
+            employee_id=emp.id,
+            scheduled_at=scheduled_utc,
+            execution_mode=mode_label,
+            error_message=f"Employee status is '{emp.employment_status}'. Required: 'Active'."
+        )
+        stats["status"] = "SKIPPED_INACTIVE"
+        reminder.status = "Paused"
+        db.commit()
+        return stats
+
     # 1. Check idempotency
     if is_already_executed(db, exec_key):
         logger.info(f"[IDEMPOTENCY] Reminder occurrence {reminder.id} already executed for '{recip_email}' at {scheduled_utc}.")
@@ -312,7 +427,7 @@ def process_due_reminder(
         html_body = f"""<div style="font-family: sans-serif; line-height: 1.5;">
   <h2 style="color: #2563eb; margin-top: 0;">Scheduled Reminder</h2>
   <p>Hello <strong>{emp.full_name}</strong>,</p>
-  <p>This is an automated reminder regarding:</p>
+  <p>This is an automated notification regarding:</p>
   <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 16px; margin: 16px 0; border-radius: 4px;">
     <strong style="font-size: 15px; color: #1e40af;">{reminder.reminder_title}</strong>
   </div>
@@ -320,7 +435,7 @@ def process_due_reminder(
     Department: {emp.department} | Recurrence: {reminder.recurrence_type} | Timezone: {reminder.timezone}
   </p>
 </div>"""
-        plain_text = f"Reminder: {reminder.reminder_title}\n\nHello {emp.full_name},\nThis is a scheduled reminder regarding: {reminder.reminder_title}\n\nDepartment: {emp.department}"
+        plain_text = f"Reminder: {reminder.reminder_title}\n\nHello {emp.full_name},\nThis is a scheduled notification regarding: {reminder.reminder_title}\n\nDepartment: {emp.department}"
 
         # 3. Simulate or Dispatch
         if simulation_mode:
@@ -350,7 +465,9 @@ def process_due_reminder(
                 status="SIMULATED_SUCCESS",
                 reminder_id=reminder.id,
                 employee_id=emp.id,
-                scheduled_at=scheduled_utc
+                scheduled_at=scheduled_utc,
+                execution_mode="SIMULATION",
+                attempt_count=1
             )
 
             if recorded:
@@ -360,7 +477,48 @@ def process_due_reminder(
                 stats["status"] = "Skipped_Duplicate"
                 logger.warning(f"[IDEMPOTENCY] Blocked duplicate insert: {rec_err}")
         else:
-            raise NotImplementedError("Live delivery reserved for Phase 6.")
+            # Live SMTP Delivery
+            if not smtp_client:
+                smtp_client = SMTPClient()
+            valid_cfg, cfg_err = smtp_client.config.validate()
+            if not valid_cfg:
+                raise ValueError(f"Live SMTP mode requires valid configuration: {cfg_err}")
+
+            custom_headers = {
+                "X-Reminder-ID": str(reminder.id),
+                "X-Employee-ID": str(emp.id),
+                "X-Execution-Key": exec_key
+            }
+
+            delivery_res = smtp_client.send_live_email(
+                to_email=recip_email,
+                subject=subject,
+                html_content=html_body,
+                plain_text=plain_text,
+                attempt=1,
+                custom_headers=custom_headers
+            )
+
+            record_execution(
+                session=db,
+                execution_key=exec_key,
+                recipient_email=recip_email,
+                subject=subject,
+                status=delivery_res.status,
+                reminder_id=reminder.id,
+                employee_id=emp.id,
+                scheduled_at=scheduled_utc,
+                execution_mode="LIVE_SMTP",
+                attempt_count=delivery_res.attempt,
+                smtp_response=delivery_res.smtp_response,
+                provider_message_id=delivery_res.message_id,
+                error_category=delivery_res.error_category,
+                error_message=delivery_res.error_message,
+                next_retry_at=delivery_res.next_retry_at
+            )
+
+            stats["status"] = delivery_res.status
+            stats["error"] = delivery_res.error_message
 
     # 4. Advance recurrence or mark completed
     reminder.last_executed_at = utc_now()
@@ -382,18 +540,89 @@ def process_due_reminder(
     return stats
 
 
+def process_pending_retries(
+    db: Session,
+    smtp_client: Optional[SMTPClient] = None,
+    as_of: Optional[datetime.datetime] = None
+) -> int:
+    """
+    Identifies MessageLog records with status='RETRY_PENDING' where
+    next_retry_at <= now, and re-attempts delivery with exponential backoff.
+    """
+    cutoff = ensure_utc(as_of) if as_of else utc_now()
+    pending = db.query(MessageLog).filter(
+        MessageLog.execution_status == "RETRY_PENDING",
+        MessageLog.next_retry_at <= cutoff
+    ).all()
+
+    if not pending:
+        return 0
+
+    if not smtp_client:
+        smtp_client = SMTPClient()
+
+    reprocessed = 0
+    for log in pending:
+        next_attempt = log.attempt_count + 1
+        logger.info(f"[RETRY PROCESSOR] Re-attempting delivery for key={log.execution_key[:12]} (Attempt {next_attempt})...")
+
+        # Re-fetch template or reconstruct body
+        html_body = f"<p>Re-attempted notification for {log.recipient_email}</p>"
+        if log.campaign and log.campaign.template:
+            try:
+                prev = template_service.render_template_preview(
+                    db=db,
+                    subject_tmpl=log.campaign.template.subject,
+                    body_tmpl=log.campaign.template.body,
+                    employee_id=log.employee_id
+                )
+                html_body = prev.rendered_html
+            except Exception:
+                pass
+
+        delivery_res = smtp_client.send_live_email(
+            to_email=log.recipient_email,
+            subject=log.subject,
+            html_content=html_body,
+            attempt=next_attempt
+        )
+
+        record_execution(
+            session=db,
+            execution_key=log.execution_key,
+            recipient_email=log.recipient_email,
+            subject=log.subject,
+            status=delivery_res.status,
+            campaign_id=log.campaign_id,
+            reminder_id=log.reminder_id,
+            employee_id=log.employee_id,
+            template_id=log.template_id,
+            scheduled_at=log.scheduled_at,
+            execution_mode="LIVE_SMTP",
+            attempt_count=delivery_res.attempt,
+            smtp_response=delivery_res.smtp_response,
+            provider_message_id=delivery_res.message_id,
+            error_category=delivery_res.error_category,
+            error_message=delivery_res.error_message,
+            next_retry_at=delivery_res.next_retry_at
+        )
+        reprocessed += 1
+
+    return reprocessed
+
+
 # ----------------- Unified Engine Cycle ----------------- #
 
 def run_pending_jobs(
     db: Session,
     simulation_mode: bool = True,
-    as_of: Optional[datetime.datetime] = None
+    as_of: Optional[datetime.datetime] = None,
+    smtp_client: Optional[SMTPClient] = None
 ) -> Dict[str, Any]:
     """
     Core polling loop execution unit:
     Identifies all due campaigns and reminders as of the specified timestamp,
-    dispatches or simulates them, handles crashes and recovery, and returns
-    aggregate performance metrics.
+    dispatches or simulates them, processes eligible retries, and returns metrics.
     """
     cutoff = ensure_utc(as_of) if as_of else utc_now()
     summary = {
@@ -404,8 +633,11 @@ def run_pending_jobs(
         "campaigns_processed": 0,
         "reminders_processed": 0,
         "messages_simulated": 0,
-        "messages_sent": 0,
+        "messages_accepted": 0,
+        "retries_scheduled": 0,
+        "retries_processed": 0,
         "duplicates_prevented": 0,
+        "inactive_skipped": 0,
         "errors": []
     }
 
@@ -416,11 +648,13 @@ def run_pending_jobs(
 
         for camp in due_campaigns:
             try:
-                res = process_due_campaign(db, camp, simulation_mode=simulation_mode)
+                res = process_due_campaign(db, camp, simulation_mode=simulation_mode, smtp_client=smtp_client)
                 summary["campaigns_processed"] += 1
                 summary["messages_simulated"] += res.get("simulated", 0)
-                summary["messages_sent"] += res.get("dispatched", 0)
+                summary["messages_accepted"] += res.get("dispatched", 0)
                 summary["duplicates_prevented"] += res.get("skipped_duplicate", 0)
+                summary["inactive_skipped"] += res.get("skipped_inactive", 0)
+                summary["retries_scheduled"] += res.get("retry_pending", 0)
                 if res.get("errors"):
                     summary["errors"].extend(res["errors"])
             except Exception as e:
@@ -434,20 +668,34 @@ def run_pending_jobs(
 
         for rem in due_reminders:
             try:
-                res = process_due_reminder(db, rem, simulation_mode=simulation_mode)
+                res = process_due_reminder(db, rem, simulation_mode=simulation_mode, smtp_client=smtp_client)
                 summary["reminders_processed"] += 1
                 if res.get("status") == "SIMULATED_SUCCESS":
                     summary["messages_simulated"] += 1
-                elif res.get("status") == "SENT":
-                    summary["messages_sent"] += 1
+                elif res.get("status") == "SMTP_ACCEPTED":
+                    summary["messages_accepted"] += 1
                 elif res.get("status") == "Skipped_Duplicate":
                     summary["duplicates_prevented"] += 1
+                elif res.get("status") == "SKIPPED_INACTIVE":
+                    summary["inactive_skipped"] += 1
+                elif res.get("status") == "RETRY_PENDING":
+                    summary["retries_scheduled"] += 1
+
                 if res.get("error"):
                     summary["errors"].append(res["error"])
             except Exception as e:
                 err_rem = f"Error executing ReminderJob ID={rem.id}: {str(e)}"
                 logger.error(err_rem)
                 summary["errors"].append(err_rem)
+
+        # C. Process pending retries (Live mode only)
+        if not simulation_mode:
+            try:
+                retries_done = process_pending_retries(db, smtp_client=smtp_client, as_of=cutoff)
+                summary["retries_processed"] = retries_done
+            except Exception as e:
+                logger.error(f"Error processing pending retries: {e}")
+                summary["errors"].append(str(e))
 
     except Exception as e:
         logger.error(f"Critical error during run_pending_jobs cycle: {str(e)}")

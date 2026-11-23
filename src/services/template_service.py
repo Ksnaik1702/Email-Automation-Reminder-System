@@ -202,6 +202,7 @@ def render_template_preview(
         if emp:
             context.update({
                 "name": emp.full_name,
+                "full_name": emp.full_name,
                 "email": emp.email,
                 "employee_id": emp.employee_id,
                 "department": emp.department or "Operations",

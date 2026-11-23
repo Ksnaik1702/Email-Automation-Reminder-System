@@ -58,6 +58,32 @@ def init_db():
     """Initializes and creates all declarative tables if they do not exist."""
     Base.metadata.create_all(bind=engine)
 
+    # Safe SQLite auto-migration for newly added columns in message_logs
+    if DATABASE_URL.startswith("sqlite"):
+        try:
+            with engine.connect() as conn:
+                cursor = conn.connection.cursor()
+                cursor.execute("PRAGMA table_info(message_logs)")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+
+                migrations = [
+                    ("template_id", "INTEGER REFERENCES email_templates(id) ON DELETE SET NULL"),
+                    ("execution_mode", "VARCHAR(20) DEFAULT 'SIMULATION' NOT NULL"),
+                    ("attempt_count", "INTEGER DEFAULT 1 NOT NULL"),
+                    ("smtp_response", "VARCHAR(255)"),
+                    ("provider_message_id", "VARCHAR(150)"),
+                    ("error_category", "VARCHAR(50)"),
+                    ("next_retry_at", "DATETIME")
+                ]
+
+                for col_name, col_def in migrations:
+                    if col_name not in existing_cols:
+                        cursor.execute(f"ALTER TABLE message_logs ADD COLUMN {col_name} {col_def}")
+                conn.connection.commit()
+                cursor.close()
+        except Exception:
+            pass
+
 def get_db() -> Generator[Session, None, None]:
     """FastAPI dependency for yielding transactional database sessions."""
     db = SessionLocal()

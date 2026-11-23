@@ -82,10 +82,13 @@ def generate_campaign_execution_key(
 def is_already_executed(session: Session, execution_key: str) -> bool:
     """
     Checks if a scheduled occurrence has already been executed in the MessageLog table.
+    Considers SIMULATED_SUCCESS, SMTP_ACCEPTED, SENT, and DELIVERY_CONFIRMED as executed.
     """
     from db.models import MessageLog
     existing = session.query(MessageLog).filter_by(execution_key=execution_key).first()
-    return existing is not None and existing.execution_status in ("SENT", "SIMULATED_SUCCESS")
+    return existing is not None and existing.execution_status in (
+        "SENT", "SIMULATED_SUCCESS", "SMTP_ACCEPTED", "DELIVERY_CONFIRMED"
+    )
 
 
 def record_execution(
@@ -97,26 +100,66 @@ def record_execution(
     campaign_id: Optional[int] = None,
     reminder_id: Optional[int] = None,
     employee_id: Optional[int] = None,
+    template_id: Optional[int] = None,
     scheduled_at: Optional[datetime.datetime] = None,
-    error_message: Optional[str] = None
+    execution_mode: str = "SIMULATION",
+    attempt_count: int = 1,
+    smtp_response: Optional[str] = None,
+    provider_message_id: Optional[str] = None,
+    error_category: Optional[str] = None,
+    error_message: Optional[str] = None,
+    next_retry_at: Optional[datetime.datetime] = None
 ) -> Tuple[bool, Optional[str]]:
     """
-    Safely records an execution into MessageLog table.
-    Returns (True, None) on success, or (False, error_reason) if a duplicate occurs.
+    Safely records or updates an execution into the MessageLog table.
+    Enforces atomic uniqueness on execution_key while preserving attempt counts
+    and provider diagnostics.
     """
     from db.models import MessageLog
+
+    # Check if a record already exists for this execution key
+    existing = session.query(MessageLog).filter_by(execution_key=execution_key).first()
+
+    if existing:
+        # If already terminal/successful, block duplicate execution attempt
+        if existing.execution_status in ("SENT", "SIMULATED_SUCCESS", "SMTP_ACCEPTED", "DELIVERY_CONFIRMED"):
+            return False, f"Duplicate execution blocked: Key {execution_key} has already been executed with status '{existing.execution_status}'."
+
+        # Otherwise, this is updating a pending/retry attempt
+        existing.execution_status = status
+        existing.execution_mode = execution_mode
+        existing.attempt_count = attempt_count
+        existing.smtp_response = smtp_response
+        existing.provider_message_id = provider_message_id
+        existing.error_category = error_category
+        existing.error_message = error_message
+        existing.next_retry_at = next_retry_at
+        existing.executed_at = datetime.datetime.now(datetime.timezone.utc)
+        try:
+            session.commit()
+            return True, None
+        except Exception as e:
+            session.rollback()
+            return False, str(e)
 
     log_entry = MessageLog(
         execution_key=execution_key,
         campaign_id=campaign_id,
         reminder_id=reminder_id,
         employee_id=employee_id,
+        template_id=template_id,
         recipient_email=normalize_recipient_email(recipient_email),
         subject=subject,
         execution_status=status,
+        execution_mode=execution_mode,
+        attempt_count=attempt_count,
+        smtp_response=smtp_response,
+        provider_message_id=provider_message_id,
+        error_category=error_category,
+        error_message=error_message,
+        next_retry_at=next_retry_at,
         scheduled_at=scheduled_at,
-        executed_at=datetime.datetime.now(datetime.timezone.utc),
-        error_message=error_message
+        executed_at=datetime.datetime.now(datetime.timezone.utc)
     )
 
     try:

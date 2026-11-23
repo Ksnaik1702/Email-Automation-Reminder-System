@@ -1,8 +1,10 @@
 """
 Root Launcher for Background Worker.
 Usage:
-    python worker.py           # Runs continuous background worker loop
-    python worker.py --once    # Runs a single evaluation cycle and exits
+    python worker.py                       # Runs continuous worker in safe SIMULATION mode (default)
+    python worker.py --once                # Runs a single evaluation cycle in simulation mode
+    python worker.py --live --confirm-live # Runs continuous worker in LIVE SMTP delivery mode
+    python worker.py --once --live --confirm-live  # Single cycle in LIVE SMTP delivery mode
 """
 import sys
 from pathlib import Path

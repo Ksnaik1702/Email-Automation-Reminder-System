@@ -149,10 +149,27 @@ def main():
     parser = argparse.ArgumentParser(description="Email Automation Background Worker")
     parser.add_argument("--interval", type=int, default=DEFAULT_POLL_INTERVAL_SECONDS, help="Polling interval in seconds")
     parser.add_argument("--once", action="store_true", help="Run a single evaluation cycle and exit immediately")
-    parser.add_argument("--live", action="store_true", help="Disable simulation mode (Not recommended in Phase 5)")
+    parser.add_argument("--live", action="store_true", help="Enable Live SMTP Delivery Mode")
+    parser.add_argument("--confirm-live", action="store_true", help="Mandatory safety confirmation required to execute live SMTP delivery")
     args = parser.parse_args()
 
-    simulation = not args.live
+    # Safety check for live delivery mode
+    simulation = True
+    if args.live:
+        env_confirmed = os.getenv("CONFIRM_LIVE_DELIVERY", "").lower() in ("true", "1", "yes") or \
+                        os.getenv("LIVE_DELIVERY_CONFIRMED", "").lower() in ("true", "1", "yes")
+        if args.confirm_live or env_confirmed:
+            simulation = False
+            logger.warning("🚨 [SAFETY NOTICE] Live SMTP delivery mode activated with explicit user confirmation.")
+        else:
+            logger.error(
+                "🚨 [SAFETY REFUSAL] Live SMTP delivery was requested with --live, but confirmation flag "
+                "--confirm-live was not provided (or CONFIRM_LIVE_DELIVERY=true). "
+                "Refusing live email transmission! Falling back safely to VIRTUAL SIMULATION mode."
+            )
+            simulation = True
+    else:
+        simulation = True
 
     if args.once:
         init_db()

@@ -234,20 +234,91 @@ Students and evaluators do not need access to live company email servers. When e
 
 ## 💻 How to Run
 
-### Option 1: Run One-Off Simulation (Dry-Run)
+### Option 1: Run One-Off Simulation (Dry-Run Sweep)
+Runs a single evaluation sweep through due campaigns and recurring reminders in safe simulation mode:
 ```bash
-python main.py --dry-run
+python worker.py --once
 ```
 
-### Option 2: Run Continuous Scheduler Loop
-Checks and dispatches reminder jobs at periodic intervals (e.g., every 30 seconds):
+### Option 2: Run Continuous APScheduler Worker (Simulation Mode - Default)
+Continuously evaluates due campaigns, recurring reminders, and retry queues without sending real emails:
 ```bash
-python main.py --schedule --interval 30
+python worker.py
 ```
 
-### Option 3: Inspect Delivery Report in Terminal
+### Option 3: Run One-Off Live SMTP Delivery (Explicit Safety Confirmation Required)
+To dispatch real emails to inboxes via SMTP, both `--live` and `--confirm-live` are strictly mandatory:
 ```bash
-python main.py --report
+python worker.py --once --live --confirm-live
+```
+
+### Option 4: Run Continuous Background Worker in Live SMTP Mode
+```bash
+python worker.py --live --confirm-live
+```
+
+### Option 5: Launch FastAPI Backend Server
+Starts the REST API service with Swagger UI at `http://127.0.0.1:8000/docs`:
+```bash
+uvicorn api.app:app --reload --port 8000
+```
+
+### Option 6: Verify SMTP Connection via API
+Test SMTP credentials safely without sending an email:
+```bash
+curl -X POST http://127.0.0.1:8000/api/scheduler/verify-smtp
+```
+
+---
+
+## 🔒 Gmail SMTP Setup Guide (Google App Passwords)
+
+When configuring Google Workspace or personal Gmail accounts for live email delivery:
+
+1. **Enable 2-Step Verification:**
+   - Navigate to [Google Account Security](https://myaccount.google.com/signinoptions/two-step-verification) and turn on 2-Step Verification.
+2. **Generate an App Password:**
+   - Go to [Google App Passwords](https://myaccount.google.com/apppasswords).
+   - Enter an app name (e.g. `Email Automation Engine`) and click **Create**.
+   - Copy the generated 16-character code (format: `xxxx xxxx xxxx xxxx`).
+3. **Configure `.env`:**
+   ```env
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USE_TLS=true
+   SMTP_USER=your_email@gmail.com
+   SMTP_PASS=xxxxxxxxxxxxxxxx
+   SMTP_FROM_EMAIL=your_email@gmail.com
+   SMTP_FROM_NAME="Email Automation Hub"
+   ```
+4. **Safety Confirmation Rule:**
+   - To prevent accidental transmissions, live delivery is strictly blocked unless `CONFIRM_LIVE_DELIVERY=true` is set in `.env` OR `--confirm-live` is provided on the command line.
+
+---
+
+## 📊 Delivery Reliability & Audit Logging Architecture
+
+### 1. Delivery Status Lifecycle
+The system strictly distinguishes between SMTP acceptance and inbox delivery:
+- `SIMULATED_SUCCESS`: Email successfully rendered and saved to local previews (Simulation Mode).
+- `SMTP_ACCEPTED`: Upstream SMTP relay accepted the message (`250 OK`) into its transmission queue.
+- `RETRY_PENDING`: Temporary failure encountered; scheduled for automated retry with exponential backoff.
+- `SKIPPED_INACTIVE`: Recipient employee is not active (`employment_status != 'Active'`); delivery prevented.
+- `FAILED`: Permanent error encountered (e.g., auth failure, invalid recipient format) or max retries exceeded.
+- `DELIVERY_CONFIRMED`: Reserved for downstream webhook delivery receipts (SendGrid/Mailgun).
+
+### 2. Error Categorization & Retry Backoff
+- **Temporary Errors (`TEMPORARY_NETWORK_ERROR`, `TEMPORARY_RATE_LIMIT`):**
+  - Socket timeouts, 421 Service not available, 450 Mailbox busy, 451 Local error.
+  - Automatically retried with exponential backoff: $T_{\text{wait}} = \text{backoff\_base} \times 2^{(\text{attempt} - 1)}$.
+  - Maximum retry attempts default to 3 before marking as `FAILED`.
+- **Permanent Errors (`AUTHENTICATION_FAILED`, `INVALID_RECIPIENT_ADDRESS`, `RECIPIENT_REJECTED`):**
+  - Invalid SMTP login credentials, malformed email addresses (e.g. missing `@` or domain), 550 Mailbox not found.
+  - Immediately marked `FAILED` without retrying.
+
+### 3. Unified Audit Log Schema (`message_logs`)
+Every execution records 18 diagnostic columns in the centralized SQLite database:
+`id`, `campaign_id`, `reminder_id`, `employee_id`, `template_id`, `recipient_email`, `subject`, `execution_key`, `execution_mode`, `execution_status`, `attempt_count`, `smtp_response`, `provider_message_id`, `error_category`, `error_message`, `scheduled_at`, `executed_at`, `next_retry_at`.
 ```
 
 ### Option 4: Launch Interactive Streamlit Dashboard
