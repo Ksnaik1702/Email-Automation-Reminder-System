@@ -58,7 +58,10 @@ class TestEmailAutomationSystem(unittest.TestCase):
         tables = [row[0] for row in cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
         conn.close()
 
-        expected_tables = ["contacts", "templates", "campaigns", "reminders", "messages"]
+        expected_tables = [
+            "employees", "email_templates", "campaigns",
+            "campaign_recipients", "reminder_jobs", "message_logs"
+        ]
         for table in expected_tables:
             self.assertIn(table, tables, f"Expected table '{table}' was not found in database.")
 

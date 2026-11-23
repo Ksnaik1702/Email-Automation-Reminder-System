@@ -1,0 +1,284 @@
+"""
+Comprehensive Phase 1 Database & ORM Test Suite.
+Validates SQLAlchemy models, relationships, constraints, duplicate prevention, and persistence.
+"""
+import unittest
+import sys
+import datetime
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from sqlalchemy.exc import IntegrityError
+from db.database import engine, SessionLocal, init_db
+from db.models import Employee, EmailTemplate, Campaign, CampaignRecipient, ReminderJob, MessageLog
+from db.migration import generate_execution_key
+
+
+class TestPhase1DatabaseArchitecture(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        """Ensures database is initialized before running tests."""
+        init_db()
+
+    def setUp(self):
+        """Create a fresh isolated session for each test."""
+        self.session = SessionLocal()
+
+    def tearDown(self):
+        """Rollback and close session after each test."""
+        self.session.rollback()
+        self.session.close()
+
+    def test_01_database_initialization(self):
+        """1. Verify that all 6 required tables exist in database metadata."""
+        table_names = [table.name for table in [
+            Employee.__table__,
+            EmailTemplate.__table__,
+            Campaign.__table__,
+            CampaignRecipient.__table__,
+            ReminderJob.__table__,
+            MessageLog.__table__
+        ]]
+        self.assertEqual(len(table_names), 6)
+        self.assertIn("employees", table_names)
+        self.assertIn("email_templates", table_names)
+        self.assertIn("campaigns", table_names)
+        self.assertIn("campaign_recipients", table_names)
+        self.assertIn("reminder_jobs", table_names)
+        self.assertIn("message_logs", table_names)
+
+    def test_02_employee_insertion_and_retrieval(self):
+        """2 & 3. Test Employee insertion, constraint checking, and field retrieval."""
+        emp = Employee(
+            employee_id="TEST_EMP_999",
+            full_name="Kavita Nair",
+            email="kavita.nair@testdomain.com",
+            company="TestCorp",
+            department="Engineering",
+            designation="Senior Architect",
+            timezone="Asia/Kolkata",
+            employment_status="Active"
+        )
+        self.session.add(emp)
+        self.session.commit()
+
+        # Retrieve and verify
+        retrieved = self.session.query(Employee).filter_by(employee_id="TEST_EMP_999").first()
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.full_name, "Kavita Nair")
+        self.assertEqual(retrieved.email, "kavita.nair@testdomain.com")
+        self.assertEqual(retrieved.designation, "Senior Architect")
+
+        # Clean up test artifact
+        self.session.delete(retrieved)
+        self.session.commit()
+
+    def test_03_email_template_insertion(self):
+        """4. Test EmailTemplate insertion and query."""
+        tmpl = EmailTemplate(
+            template_name="unit_test_template.html",
+            category="Testing",
+            subject="Test Subject {{ name }}",
+            body="<p>Test content for {{ name }}</p>"
+        )
+        self.session.add(tmpl)
+        self.session.commit()
+
+        retrieved = self.session.query(EmailTemplate).filter_by(template_name="unit_test_template.html").first()
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.category, "Testing")
+
+        # Clean up
+        self.session.delete(retrieved)
+        self.session.commit()
+
+    def test_04_campaign_creation_and_template_relationship(self):
+        """5. Test Campaign creation and relationship with EmailTemplate."""
+        tmpl = EmailTemplate(
+            template_name="campaign_rel_template.html",
+            category="Notifications",
+            subject="Notice: {{ title }}",
+            body="<div>Body content</div>"
+        )
+        self.session.add(tmpl)
+        self.session.commit()
+
+        camp = Campaign(
+            campaign_name="Q4 Strategy Announcement",
+            description="Broadcast to department heads",
+            category="Executive",
+            template_id=tmpl.id,
+            status="Scheduled",
+            scheduled_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        self.session.add(camp)
+        self.session.commit()
+
+        # Test bidirectional ORM relationship
+        retrieved_camp = self.session.query(Campaign).filter_by(campaign_name="Q4 Strategy Announcement").first()
+        self.assertIsNotNone(retrieved_camp)
+        self.assertEqual(retrieved_camp.template.template_name, "campaign_rel_template.html")
+
+        # Clean up
+        self.session.delete(retrieved_camp)
+        self.session.delete(tmpl)
+        self.session.commit()
+
+    def test_05_campaign_recipient_relationship(self):
+        """6. Test CampaignRecipient relationship linking Campaign and Employee."""
+        emp = Employee(
+            employee_id="TEST_EMP_REL",
+            full_name="Deepak Joshi",
+            email="deepak.joshi@example.com",
+            employment_status="Active"
+        )
+        tmpl = EmailTemplate(
+            template_name="recipient_rel_tmpl.html",
+            subject="Test Subj",
+            body="Content"
+        )
+        self.session.add_all([emp, tmpl])
+        self.session.commit()
+
+        camp = Campaign(
+            campaign_name="Recipient Relationship Campaign",
+            template_id=tmpl.id,
+            status="Draft"
+        )
+        self.session.add(camp)
+        self.session.commit()
+
+        recipient = CampaignRecipient(
+            campaign_id=camp.id,
+            employee_id=emp.id,
+            recipient_email=emp.email,
+            status="Pending"
+        )
+        self.session.add(recipient)
+        self.session.commit()
+
+        # Verify relationship from campaign
+        self.assertEqual(len(camp.recipients), 1)
+        self.assertEqual(camp.recipients[0].employee.full_name, "Deepak Joshi")
+
+        # Clean up
+        self.session.delete(camp)
+        self.session.delete(emp)
+        self.session.delete(tmpl)
+        self.session.commit()
+
+    def test_06_reminder_creation_and_employee_relationship(self):
+        """7. Test ReminderJob creation and employee linkage."""
+        emp = Employee(
+            employee_id="TEST_REM_EMP",
+            full_name="Manish Sen",
+            email="manish.sen@example.com",
+            employment_status="Active"
+        )
+        self.session.add(emp)
+        self.session.commit()
+
+        job = ReminderJob(
+            employee_id=emp.id,
+            reminder_title="Submit Monthly Timesheet",
+            scheduled_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2),
+            timezone="Asia/Kolkata",
+            recurrence_type="Monthly",
+            status="Active"
+        )
+        self.session.add(job)
+        self.session.commit()
+
+        retrieved_job = self.session.query(ReminderJob).filter_by(reminder_title="Submit Monthly Timesheet").first()
+        self.assertIsNotNone(retrieved_job)
+        self.assertEqual(retrieved_job.employee.full_name, "Manish Sen")
+        self.assertEqual(retrieved_job.recurrence_type, "Monthly")
+
+        # Clean up
+        self.session.delete(job)
+        self.session.delete(emp)
+        self.session.commit()
+
+    def test_07_message_log_insertion(self):
+        """8. Test MessageLog creation and recording."""
+        exec_key = generate_execution_key("TEST_REM_01", "manish@example.com", "2026-11-23 10:00:00")
+        log = MessageLog(
+            recipient_email="manish@example.com",
+            subject="Test Dispatch Notice",
+            execution_status="SIMULATED_SUCCESS",
+            executed_at=datetime.datetime.now(datetime.timezone.utc),
+            execution_key=exec_key
+        )
+        self.session.add(log)
+        self.session.commit()
+
+        retrieved = self.session.query(MessageLog).filter_by(execution_key=exec_key).first()
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.execution_status, "SIMULATED_SUCCESS")
+
+        # Clean up
+        self.session.delete(retrieved)
+        self.session.commit()
+
+    def test_08_duplicate_execution_prevention(self):
+        """9. Test Idempotency: Unique execution_key prevents duplicate executions."""
+        shared_key = "IDEMPOTENT_KEY_ALPHA_001"
+        log1 = MessageLog(
+            recipient_email="worker1@example.com",
+            subject="First Dispatch",
+            execution_status="SENT",
+            execution_key=shared_key
+        )
+        self.session.add(log1)
+        self.session.commit()
+
+        # Attempt to insert identical execution_key (simulating duplicate send)
+        log2 = MessageLog(
+            recipient_email="worker1@example.com",
+            subject="Duplicate Dispatch Attempt",
+            execution_status="SENT",
+            execution_key=shared_key
+        )
+        self.session.add(log2)
+
+        # Must raise IntegrityError due to UniqueConstraint('execution_key')
+        with self.assertRaises(IntegrityError):
+            self.session.commit()
+
+        self.session.rollback()
+
+        # Clean up
+        clean_target = self.session.query(MessageLog).filter_by(execution_key=shared_key).first()
+        if clean_target:
+            self.session.delete(clean_target)
+            self.session.commit()
+
+    def test_09_existing_data_preservation(self):
+        """10. Verify existing records from contacts.csv are preserved in database."""
+        employees = self.session.query(Employee).all()
+        self.assertGreaterEqual(len(employees), 5)
+        emails = [e.email for e in employees]
+        self.assertIn("aarav.sharma@example.com", emails)
+        self.assertIn("priya.patel@example.com", emails)
+        self.assertIn("rohan.verma@example.com", emails)
+        self.assertIn("sneha.kulkarni@example.com", emails)
+        self.assertIn("vikram.singh@example.com", emails)
+
+    def test_10_database_persistence_after_restart(self):
+        """11. Verify persistence: Disconnecting session/engine leaves records intact on disk."""
+        self.session.close()
+        engine.dispose()
+
+        # Open completely fresh session
+        new_session = SessionLocal()
+        count = new_session.query(Employee).count()
+        self.assertGreaterEqual(count, 5)
+        new_session.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
