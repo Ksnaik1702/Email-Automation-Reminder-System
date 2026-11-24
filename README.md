@@ -261,10 +261,21 @@ python worker.py --live --confirm-live
 ### Option 5: Launch FastAPI Backend Server
 Starts the REST API service with Swagger UI at `http://127.0.0.1:8000/docs`:
 ```bash
-uvicorn api.app:app --reload --port 8000
+python -m uvicorn api.app:app --reload --port 8000
 ```
 
-### Option 6: Verify SMTP Connection via API
+### Option 6: Launch Enterprise SaaS Web Dashboard (Next.js 14)
+Starts the modern enterprise SaaS web dashboard at `http://localhost:3000`:
+```bash
+# Development mode
+npm --prefix apps/web run dev
+
+# Or production build & start:
+npm --prefix apps/web run build
+npm --prefix apps/web run start
+```
+
+### Option 7: Verify SMTP Connection via API
 Test SMTP credentials safely without sending an email:
 ```bash
 curl -X POST http://127.0.0.1:8000/api/scheduler/verify-smtp
