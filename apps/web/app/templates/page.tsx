@@ -56,13 +56,19 @@ interface PreviewResult {
 
 const CATEGORIES = [
   "All",
+  "General Announcement",
+  "Training",
+  "Finance",
+  "Meeting",
+  "HR Task",
+  "Webinar",
+  "Payment",
   "Technical Training",
   "Employee Onboarding",
   "Meeting Invitation",
   "Training Reminder",
   "Performance Review",
   "Webinar Invitation",
-  "General Announcement",
   "Task Deadline",
   "Other"
 ]
@@ -767,6 +773,7 @@ export default function TemplateManagementPage() {
             <input
               type="text"
               required
+              spellCheck={false}
               value={formSubject}
               onFocus={() => setActiveTargetField('subject')}
               onChange={(e) => setFormSubject(e.target.value)}
@@ -794,7 +801,11 @@ export default function TemplateManagementPage() {
             </div>
             <textarea
               required
-              rows={12}
+              rows={9}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
               value={formBody}
               onFocus={() => setActiveTargetField('body')}
               onChange={(e) => setFormBody(e.target.value)}

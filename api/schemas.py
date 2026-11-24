@@ -138,6 +138,12 @@ VALID_TEMPLATE_CATEGORIES = [
     "Webinar Invitation",
     "General Announcement",
     "Task Deadline",
+    "Training",
+    "Finance",
+    "Meeting",
+    "HR Task",
+    "Webinar",
+    "Payment",
     "Other"
 ]
 
@@ -150,13 +156,12 @@ class EmailTemplateBase(BaseModel):
 
     @field_validator("category")
     def validate_category(cls, v: str) -> str:
-        clean = v.strip()
-        if clean not in VALID_TEMPLATE_CATEGORIES:
-            # Allow fallback if close
-            for cat in VALID_TEMPLATE_CATEGORIES:
-                if cat.lower() == clean.lower():
-                    return cat
-            raise ValueError(f"Invalid category '{v}'. Allowed categories: {VALID_TEMPLATE_CATEGORIES}")
+        clean = v.strip() if v else "General Announcement"
+        if not clean:
+            return "General Announcement"
+        for cat in VALID_TEMPLATE_CATEGORIES:
+            if cat.lower() == clean.lower():
+                return cat
         return clean
 
 
@@ -174,11 +179,11 @@ class EmailTemplateUpdate(BaseModel):
     def validate_optional_category(cls, v: Optional[str]) -> Optional[str]:
         if v is not None:
             clean = v.strip()
+            if not clean:
+                return "General Announcement"
             for cat in VALID_TEMPLATE_CATEGORIES:
                 if cat.lower() == clean.lower():
                     return cat
-            if clean not in VALID_TEMPLATE_CATEGORIES:
-                raise ValueError(f"Invalid category '{v}'. Allowed: {VALID_TEMPLATE_CATEGORIES}")
             return clean
         return v
 

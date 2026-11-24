@@ -61,10 +61,10 @@ export default function Modal({
 
       <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
         <div
-          className={`relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthClasses} border border-slate-200 animate-in zoom-in-95 duration-150`}
+          className={`relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 w-full ${maxWidthClasses} border border-slate-200 animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]`}
         >
           {/* Header */}
-          <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
             <div>
               <h3 className="text-base font-bold text-slate-900 leading-tight">
                 {title}
@@ -83,7 +83,7 @@ export default function Modal({
           </div>
 
           {/* Body */}
-          <div className="px-6 py-5 max-h-[calc(85vh-120px)] overflow-y-auto">
+          <div className="px-6 py-5 overflow-y-auto flex-1">
             {children}
           </div>
         </div>
