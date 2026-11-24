@@ -24,6 +24,20 @@ FIELDNAMES = [
     "preview_file"
 ]
 
+def sanitize_csv_cell(val: Any) -> Any:
+    """
+    Mitigates CSV Formula Injection (CWE-1236).
+    Prepends a single quote if the string begins with =, +, -, @, \\t, \\r.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        return val
+    s = str(val)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
 class DeliveryReporter:
     def __init__(self, report_path: Path = REPORT_FILE):
         self.report_path = report_path
@@ -39,19 +53,19 @@ class DeliveryReporter:
     def record_result(self, job: Dict[str, Any], subject: str, result: Dict[str, Any]):
         """Appends a single send attempt record to the CSV delivery audit."""
         row = {
-            "reminder_id": job.get("reminder_id", ""),
-            "contact_id": job.get("contact_id", ""),
-            "recipient_name": job.get("name", ""),
-            "recipient_email": job.get("email", ""),
-            "company": job.get("company", ""),
-            "category": job.get("category", ""),
-            "priority": job.get("priority", ""),
-            "subject": subject,
-            "status": result.get("status", "UNKNOWN"),
-            "timestamp": result.get("timestamp", ""),
-            "message_id": result.get("message_id") or "N/A",
-            "error": result.get("error") or "None",
-            "preview_file": Path(result.get("preview_path", "")).name if result.get("preview_path") else "N/A"
+            "reminder_id": sanitize_csv_cell(job.get("reminder_id", "")),
+            "contact_id": sanitize_csv_cell(job.get("contact_id", "")),
+            "recipient_name": sanitize_csv_cell(job.get("name", "")),
+            "recipient_email": sanitize_csv_cell(job.get("email", "")),
+            "company": sanitize_csv_cell(job.get("company", "")),
+            "category": sanitize_csv_cell(job.get("category", "")),
+            "priority": sanitize_csv_cell(job.get("priority", "")),
+            "subject": sanitize_csv_cell(subject),
+            "status": sanitize_csv_cell(result.get("status", "UNKNOWN")),
+            "timestamp": sanitize_csv_cell(result.get("timestamp", "")),
+            "message_id": sanitize_csv_cell(result.get("message_id") or "N/A"),
+            "error": sanitize_csv_cell(result.get("error") or "None"),
+            "preview_file": sanitize_csv_cell(Path(result.get("preview_path", "")).name if result.get("preview_path") else "N/A")
         }
 
         with open(self.report_path, "a", newline="", encoding="utf-8") as f:

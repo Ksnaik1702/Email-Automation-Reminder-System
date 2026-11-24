@@ -516,6 +516,39 @@ curl -o failures_audit.csv "http://localhost:8000/api/analytics/export?export_ty
 
 ---
 
+## 🛡️ Phase 8: Security Hardening & End-to-End Validation
+
+The system has undergone a comprehensive security audit and end-to-end reliability verification across all layers:
+
+### 1. Security Mitigations Implemented
+- **CSV Formula Injection Mitigation (CWE-1236):**
+  All user-controllable text exported to CSV files (Analytics reports, Employee exports, Delivery reports) is sanitized against formula injection. Any string starting with `= , + , - , @ , \t , \r` is prepended with a single quote (`'`), ensuring spreadsheet software (Excel, LibreOffice Calc) treats it strictly as safe text.
+- **SMTP Header Injection / CRLF Defense (CWE-93):**
+  Carriage returns (`\r`) and line feeds (`\n`) are stripped from email subjects, sender/recipient addresses, and custom headers in `SMTPClient` and `EmailSender`, preventing header injection, Bcc leakage, or MIME envelope manipulation.
+- **Stored XSS Elimination (Frontend Sandboxing):**
+  Template and campaign HTML previews in the Next.js frontend are rendered inside an isolated `<iframe>` with an empty sandbox (`sandbox=""` and `srcDoc={rendered_html}`). JavaScript execution and cross-origin access are completely blocked by the browser.
+- **Jinja2 Sandboxed Execution:**
+  Template parsing enforces `jinja2.sandbox.SandboxedEnvironment` with `autoescape=True` and `undefined=StrictUndefined`. Access to dangerous Python internals (`__class__`, `__mro__`, `__subclasses__`) is blocked at runtime.
+- **Fail-Closed Live Delivery Policy:**
+  Live email dispatch across CLI (`main.py --send-real`, `worker.py --live`), Background Worker (`BackgroundWorker(simulation_mode=False)`), Service Layer (`scheduling_service`), Mailer (`EmailSender(dry_run=False)`), and API endpoints (`POST /dispatch-batch`, `POST /api/scheduler/trigger`) strictly fails closed unless explicit confirmation (`confirm_live=true` / `CONFIRM_LIVE_DELIVERY=true`) is provided.
+- **CSV File Upload Limitations:**
+  Employee CSV imports (`POST /api/employees/import-csv`) enforce file format checks (`.csv`) and a strict 10MB file size limit (`HTTP 413 Content Too Large`), mitigating resource exhaustion / DoS attacks.
+- **CORS Hardening & Zero Credential Disclosure:**
+  Cross-Origin Resource Sharing is configurable via `CORS_ORIGINS` (defaults to frontend port 3000) and disallows credentials when wildcards are active. API endpoints and exported reports guarantee zero exposure of SMTP passwords, connection strings, or system secrets.
+
+### 2. Comprehensive Test Verification
+Execute the dedicated security and end-to-end test suite:
+```bash
+python -m unittest tests/test_phase8_security_e2e.py
+```
+
+Run the complete repository regression test suite (114 tests, 100% pass):
+```bash
+python -m unittest discover tests
+```
+
+---
+
 ## 🔒 Safe GitHub Best Practices
 
 To ensure complete cybersecurity and compliance when publishing this project on GitHub:

@@ -2,6 +2,7 @@
 Mailer module: Handles SMTP transport, authentication, message construction,
 and Virtual Dry-Run simulation for zero-risk student testing and portfolio proof.
 """
+import os
 import smtplib
 import uuid
 import datetime
@@ -21,6 +22,12 @@ from src.config import (
     PREVIEWS_DIR
 )
 
+def sanitize_header_value(val: Any) -> str:
+    """Removes CRLF and newlines to prevent SMTP header injection."""
+    if val is None:
+        return ""
+    return " ".join(str(val).splitlines()).strip()
+
 class EmailSender:
     def __init__(self, dry_run: bool = DRY_RUN):
         self.dry_run = dry_run
@@ -33,16 +40,21 @@ class EmailSender:
 
     def build_message(self, to_email: str, subject: str, html_content: str) -> EmailMessage:
         """Constructs a MIME multi-part EmailMessage with HTML and plain-text fallback."""
+        clean_subject = sanitize_header_value(subject)
+        clean_to = sanitize_header_value(to_email)
+        clean_from_name = sanitize_header_value(self.sender_name)
+        clean_from_email = sanitize_header_value(self.sender_email)
+
         msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = f"{self.sender_name} <{self.sender_email}>"
-        msg["To"] = to_email
+        msg["Subject"] = clean_subject
+        msg["From"] = f"{clean_from_name} <{clean_from_email}>"
+        msg["To"] = clean_to
         msg["Date"] = datetime.datetime.now(datetime.timezone.utc)
         msg["Message-ID"] = f"<{uuid.uuid4()}@{self.host}>"
 
         # Plain-text preview fallback
         plain_fallback = (
-            f"{subject}\n\n"
+            f"{clean_subject}\n\n"
             "This is an automated notification. Please view this email in an HTML-compatible client."
         )
         msg.set_content(plain_fallback)
@@ -90,6 +102,18 @@ class EmailSender:
         # ----------------------------------------------------
         # Real SMTP Delivery Mode
         # ----------------------------------------------------
+        confirm_live = os.getenv("CONFIRM_LIVE_DELIVERY", "").strip().lower()
+        if confirm_live != "true":
+            error_msg = "Safety Refusal: Live delivery requires CONFIRM_LIVE_DELIVERY=true environment variable."
+            logger.error(error_msg)
+            return {
+                "status": "FAILED",
+                "message_id": None,
+                "timestamp": now_str,
+                "error": error_msg,
+                "preview_path": None
+            }
+
         if not self.password:
             error_msg = "SMTP_PASSWORD is missing in .env. Run with --dry-run or configure your credentials."
             logger.error(error_msg)

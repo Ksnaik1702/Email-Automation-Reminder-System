@@ -106,6 +106,16 @@ def parse_smtp_queue_id(smtp_response: Optional[str]) -> Optional[str]:
     return None
 
 
+def sanitize_header_value(val: Any) -> str:
+    """
+    Prevents SMTP Header Injection (CRLF injection / CWE-93).
+    Strips carriage return (\\r) and line feed (\\n) characters, collapsing whitespace.
+    """
+    if val is None:
+        return ""
+    return " ".join(str(val).splitlines()).strip()
+
+
 class SMTPDeliveryResult(NamedTuple):
     """
     Normalized dispatch result containing delivery status and diagnostics.
@@ -206,14 +216,19 @@ class SMTPClient:
         Contains plain-text alternative, rendered HTML, sender identity,
         and tracking headers.
         """
+        clean_subject = sanitize_header_value(subject)
+        clean_to = sanitize_header_value(to_email)
+        clean_from_name = sanitize_header_value(self.config.from_name)
+        clean_from_email = sanitize_header_value(self.config.from_email)
+
         msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = f"{self.config.from_name} <{self.config.from_email}>"
-        msg["To"] = to_email
+        msg["Subject"] = clean_subject
+        msg["From"] = f"{clean_from_name} <{clean_from_email}>"
+        msg["To"] = clean_to
         msg["Date"] = datetime.datetime.now(datetime.timezone.utc)
         
         # Unique Message-ID
-        domain = self.config.from_email.split("@")[-1] if "@" in self.config.from_email else "localhost"
+        domain = clean_from_email.split("@")[-1] if "@" in clean_from_email else "localhost"
         unique_id = f"<{uuid.uuid4()}@{domain}>"
         msg["Message-ID"] = unique_id
 
@@ -221,11 +236,13 @@ class SMTPClient:
         if custom_headers:
             for header_name, header_val in custom_headers.items():
                 if header_val is not None:
-                    msg[header_name] = str(header_val)
+                    sanitized_name = re.sub(r'[^a-zA-Z0-9_-]', '', header_name)
+                    if sanitized_name:
+                        msg[sanitized_name] = sanitize_header_value(header_val)
 
         # 1. Plain-text alternative
         text_body = plain_text or (
-            f"{subject}\n\n"
+            f"{clean_subject}\n\n"
             "This is an automated notification. Please view this message in an HTML-compatible client."
         )
         msg.set_content(text_body)

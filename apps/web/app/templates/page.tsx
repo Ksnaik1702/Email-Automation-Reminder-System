@@ -696,9 +696,11 @@ export default function TemplateManagementPage() {
               <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Rendering template...</div>
             ) : previewResult ? (
               previewTab === 'html' ? (
-                <div
-                  style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 20, minHeight: 260, background: '#fff' }}
-                  dangerouslySetInnerHTML={{ __html: previewResult.rendered_html }}
+                <iframe
+                  title="HTML Email Preview"
+                  sandbox=""
+                  srcDoc={previewResult.rendered_html}
+                  style={{ border: '1px solid #e2e8f0', borderRadius: 6, width: '100%', minHeight: 280, background: '#fff' }}
                 />
               ) : (
                 <pre style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 16, background: '#f8fafc', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12, color: '#334155', minHeight: 200 }}>

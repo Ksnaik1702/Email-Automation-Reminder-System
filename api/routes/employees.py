@@ -49,22 +49,31 @@ def export_employees_csv(
     )
 
 
+MAX_CSV_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
 @router.post("/import-csv", response_model=CSVImportSummary, status_code=status.HTTP_200_OK)
-async def import_employees_csv(
+def import_employees_csv(
     file: UploadFile = File(..., description="CSV file with employee records"),
     db: Session = Depends(get_db)
 ):
     """
     Uploads and processes an employee CSV file.
-    Validates headers, emails, timezones, and returns an import audit summary.
+    Validates headers, emails, timezones, and enforce max upload size limits (10MB).
     """
-    if not file.filename.lower().endswith(".csv"):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file format. Uploaded file must be a .csv file."
         )
 
-    content = await file.read()
+    content = file.file.read()
+    if len(content) > MAX_CSV_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Uploaded file exceeds maximum allowed size of {MAX_CSV_FILE_SIZE // (1024 * 1024)}MB."
+        )
+
     summary = employee_service.import_employees_from_csv(db, content)
     return summary
 

@@ -475,6 +475,22 @@ def get_recent_activity(
 
 # ----------------- 7. CSV Export Generator ----------------- #
 
+def sanitize_csv_cell(val: Any) -> Any:
+    """
+    Mitigates CSV Formula Injection (CWE-1236 / Spreadsheet formula injection).
+    If a string value begins with formula characters (=, +, -, @, \t, \r),
+    prepend a single quote (') to force spreadsheets to interpret it strictly as plain text.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        return val
+    s = str(val)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def export_analytics_csv(
     db: Session,
     export_type: str = "complete",
@@ -488,6 +504,7 @@ def export_analytics_csv(
     """
     Generates a CSV string representation of the requested report type.
     Ensures zero leakage of credentials, passwords, or secret connection strings.
+    Sanitizes values against CSV Formula Injection.
     Returns: (csv_content_string, filename)
     """
     timestamp_str = utc_now().strftime("%Y%m%d_%H%M%SZ")
@@ -520,22 +537,24 @@ def export_analytics_csv(
         for log in query.all():
             camp_name = log.campaign.campaign_name if log.campaign else "N/A"
             writer.writerow([
-                log.id,
-                log.execution_key,
-                log.execution_mode,
-                log.execution_status,
-                log.attempt_count,
-                log.recipient_email,
-                log.subject,
-                log.campaign_id or "",
-                camp_name,
-                log.reminder_id or "",
-                log.error_category or "",
-                log.error_message or "",
-                log.message_id or "",
-                log.smtp_queue_id or "",
-                log.provider_message_id or "",
-                log.executed_at.isoformat() if log.executed_at else ""
+                sanitize_csv_cell(c) for c in [
+                    log.id,
+                    log.execution_key,
+                    log.execution_mode,
+                    log.execution_status,
+                    log.attempt_count,
+                    log.recipient_email,
+                    log.subject,
+                    log.campaign_id or "",
+                    camp_name,
+                    log.reminder_id or "",
+                    log.error_category or "",
+                    log.error_message or "",
+                    log.message_id or "",
+                    log.smtp_queue_id or "",
+                    log.provider_message_id or "",
+                    log.executed_at.isoformat() if log.executed_at else ""
+                ]
             ])
 
     elif clean_type == "campaigns":
@@ -551,17 +570,19 @@ def export_analytics_csv(
         camp_data = get_campaign_performance(db, start_date=start_date, end_date=end_date)
         for c in camp_data:
             writer.writerow([
-                c["campaign_id"] or "N/A",
-                c["campaign_name"],
-                c["total_recipients"],
-                c["total_logged"],
-                c["simulated"],
-                c["smtp_accepted"],
-                c["delivery_confirmed"],
-                c["failed"],
-                c["retry_pending"],
-                c["delivery_uncertain"],
-                c["skipped_inactive"]
+                sanitize_csv_cell(cell) for cell in [
+                    c["campaign_id"] or "N/A",
+                    c["campaign_name"],
+                    c["total_recipients"],
+                    c["total_logged"],
+                    c["simulated"],
+                    c["smtp_accepted"],
+                    c["delivery_confirmed"],
+                    c["failed"],
+                    c["retry_pending"],
+                    c["delivery_uncertain"],
+                    c["skipped_inactive"]
+                ]
             ])
 
     elif clean_type == "failures":
@@ -592,17 +613,19 @@ def export_analytics_csv(
         for log in query.all():
             camp_name = log.campaign.campaign_name if log.campaign else "N/A"
             writer.writerow([
-                log.id,
-                log.execution_key,
-                log.recipient_email,
-                log.subject,
-                camp_name,
-                log.attempt_count,
-                log.error_category or "Uncategorized",
-                log.error_message or "",
-                log.smtp_response or "",
-                log.message_id or "",
-                log.executed_at.isoformat() if log.executed_at else ""
+                sanitize_csv_cell(cell) for cell in [
+                    log.id,
+                    log.execution_key,
+                    log.recipient_email,
+                    log.subject,
+                    camp_name,
+                    log.attempt_count,
+                    log.error_category or "Uncategorized",
+                    log.error_message or "",
+                    log.smtp_response or "",
+                    log.message_id or "",
+                    log.executed_at.isoformat() if log.executed_at else ""
+                ]
             ])
 
     elif clean_type == "uncertain":
@@ -627,16 +650,18 @@ def export_analytics_csv(
         for log in query.all():
             camp_name = log.campaign.campaign_name if log.campaign else "N/A"
             writer.writerow([
-                log.id,
-                log.execution_key,
-                log.recipient_email,
-                log.subject,
-                camp_name,
-                log.attempt_count,
-                log.message_id or "",
-                log.smtp_response or "",
-                log.error_message or "",
-                log.executed_at.isoformat() if log.executed_at else ""
+                sanitize_csv_cell(cell) for cell in [
+                    log.id,
+                    log.execution_key,
+                    log.recipient_email,
+                    log.subject,
+                    camp_name,
+                    log.attempt_count,
+                    log.message_id or "",
+                    log.smtp_response or "",
+                    log.error_message or "",
+                    log.executed_at.isoformat() if log.executed_at else ""
+                ]
             ])
 
     else:

@@ -2,6 +2,7 @@
 FastAPI REST API for Email Automation & Reminder System.
 Exposes CRUD endpoints for contacts, templates, campaigns, reminders, and delivery stats.
 """
+import os
 import uuid
 import datetime as dt
 from typing import Optional, List
@@ -28,14 +29,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS setup for dashboard integration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS setup with environment-configured origins and credential safety
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+if "*" in allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Include Routers
 app.include_router(tracking_router)
@@ -204,5 +216,12 @@ def list_messages(limit: int = 50):
 @app.post("/dispatch-batch")
 def trigger_dispatch(dry_run: bool = True):
     """Triggers an immediate dispatch batch cycle."""
+    if not dry_run:
+        confirm = os.getenv("CONFIRM_LIVE_DELIVERY", "").strip().lower()
+        if confirm != "true":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Safety Refusal: Live delivery requires CONFIRM_LIVE_DELIVERY=true environment variable."
+            )
     results = dispatch_batch(dry_run=dry_run)
     return {"message": "Batch dispatch executed", "processed": len(results), "dry_run": dry_run}

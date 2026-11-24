@@ -1069,9 +1069,11 @@ export default function CampaignsPage() {
                       </div>
                       
                       {previewMode === 'html' ? (
-                        <div
-                          style={{ padding: 18, background: '#fff', minHeight: 180, fontSize: 13 }}
-                          dangerouslySetInnerHTML={{ __html: previewResult.rendered_html }}
+                        <iframe
+                          title="Recipient Email Preview"
+                          sandbox=""
+                          srcDoc={previewResult.rendered_html}
+                          style={{ width: '100%', minHeight: 240, border: 'none', background: '#fff' }}
                         />
                       ) : (
                         <pre style={{ padding: 18, background: '#fafafa', margin: 0, minHeight: 180, fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
@@ -1488,9 +1490,11 @@ export default function CampaignsPage() {
                   </div>
 
                   {previewMode === 'html' ? (
-                    <div
-                      style={{ padding: 20, background: '#fff', minHeight: 180, fontSize: 13 }}
-                      dangerouslySetInnerHTML={{ __html: previewResult.rendered_html }}
+                    <iframe
+                      title="Recipient Email Preview"
+                      sandbox=""
+                      srcDoc={previewResult.rendered_html}
+                      style={{ width: '100%', minHeight: 240, border: 'none', background: '#fff' }}
                     />
                   ) : (
                     <pre style={{ padding: 20, background: '#fafafa', margin: 0, minHeight: 180, fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>

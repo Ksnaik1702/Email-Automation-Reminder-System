@@ -341,6 +341,21 @@ def import_employees_from_csv(db: Session, file_content: bytes) -> CSVImportSumm
     )
 
 
+def sanitize_csv_cell(val: Any) -> Any:
+    """
+    Mitigates CSV Formula Injection (CWE-1236).
+    Prepends a single quote if the string begins with =, +, -, @, \\t, \\r.
+    """
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        return val
+    s = str(val)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def export_employees_to_csv(
     db: Session,
     search: Optional[str] = None,
@@ -348,6 +363,7 @@ def export_employees_to_csv(
 ) -> str:
     """
     Exports filtered employees from database to CSV string format.
+    Sanitizes values to prevent CSV formula injection.
     """
     employees, _ = list_employees(db, search=search, department=department, limit=10000)
 
@@ -369,15 +385,17 @@ def export_employees_to_csv(
 
     for emp in employees:
         writer.writerow([
-            emp.employee_id,
-            emp.full_name,
-            emp.email,
-            emp.company,
-            emp.department,
-            emp.designation,
-            emp.timezone,
-            emp.employment_status,
-            emp.created_at.strftime("%Y-%m-%d %H:%M:%S") if emp.created_at else ""
+            sanitize_csv_cell(c) for c in [
+                emp.employee_id,
+                emp.full_name,
+                emp.email,
+                emp.company,
+                emp.department,
+                emp.designation,
+                emp.timezone,
+                emp.employment_status,
+                emp.created_at.strftime("%Y-%m-%d %H:%M:%S") if emp.created_at else ""
+            ]
         ])
 
     return output.getvalue()
