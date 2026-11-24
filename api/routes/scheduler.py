@@ -90,3 +90,53 @@ def trigger_scheduler_cycle(
         "execution_mode": "SIMULATION" if simulation else "LIVE_SMTP",
         "result": result
     }
+
+
+@router.get("/reminders")
+def list_reminder_jobs(
+    status: Optional[str] = Query(None, description="Filter by status (Active, Paused, Completed, Cancelled)"),
+    search: Optional[str] = Query(None, description="Search title or employee"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Returns list of all scheduled reminder jobs from the unified database.
+    """
+    query = db.query(ReminderJob)
+    if status and status != "All":
+        query = query.filter(ReminderJob.status == status)
+
+    jobs = query.order_by(ReminderJob.scheduled_at.asc()).all()
+
+    items = []
+    for j in jobs:
+        emp_name = j.employee.full_name if j.employee else ""
+        emp_email = j.employee.email if j.employee else ""
+        emp_code = j.employee.employee_id if j.employee else ""
+        
+        if search and search.strip():
+            s = search.strip().lower()
+            if not (s in j.reminder_title.lower() or s in emp_name.lower() or s in emp_email.lower() or s in emp_code.lower()):
+                continue
+
+        items.append({
+            "id": j.id,
+            "campaign_id": j.campaign_id,
+            "campaign_name": j.campaign.campaign_name if j.campaign else None,
+            "employee_id": j.employee_id,
+            "employee_name": emp_name,
+            "employee_email": emp_email,
+            "employee_code": emp_code,
+            "reminder_title": j.reminder_title,
+            "scheduled_at": j.scheduled_at.isoformat() if j.scheduled_at else None,
+            "timezone": j.timezone,
+            "recurrence_type": j.recurrence_type,
+            "status": j.status,
+            "last_executed_at": j.last_executed_at.isoformat() if j.last_executed_at else None,
+            "created_at": j.created_at.isoformat() if j.created_at else None
+        })
+
+    return {
+        "items": items,
+        "total": len(items)
+    }
+

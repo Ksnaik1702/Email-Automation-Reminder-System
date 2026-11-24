@@ -1,6 +1,34 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import AppLayout from '@/components/AppLayout'
+import KPICard from '@/components/KPICard'
+import StatusBadge from '@/components/StatusBadge'
+import SearchInput from '@/components/SearchInput'
+import Button from '@/components/Button'
+import EmptyState from '@/components/EmptyState'
+import Drawer from '@/components/Drawer'
+import {
+  BarChart3,
+  TrendingUp,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  HelpCircle,
+  UserX,
+  Download,
+  Filter,
+  RefreshCw,
+  Calendar,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Layers,
+  Activity,
+  FileSpreadsheet
+} from 'lucide-react'
 
 interface OverviewMetrics {
   total_executions: number
@@ -111,6 +139,8 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState<boolean>(true)
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [exporting, setExporting] = useState<boolean>(false)
+  const [selectedLog, setSelectedLog] = useState<ActivityLogItem | null>(null)
+  const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false)
 
   useEffect(() => {
     fetchAvailableCampaigns()
@@ -149,38 +179,56 @@ export default function AnalyticsDashboard() {
     const q = buildFilterQuery()
 
     try {
-      // 1. Overview KPIs
-      const overviewRes = await fetch(`${API_URL}/api/analytics/overview?${q}`)
-      if (overviewRes.ok) setOverview(await overviewRes.json())
+      const [ovRes, trRes, distRes, campRes, failRes, actRes] = await Promise.all([
+        fetch(`${API_URL}/api/analytics/overview?${q}`),
+        fetch(`${API_URL}/api/analytics/trends?${q}`),
+        fetch(`${API_URL}/api/analytics/status-distribution?${q}`),
+        fetch(`${API_URL}/api/analytics/campaign-performance?${q}`),
+        fetch(`${API_URL}/api/analytics/failures?${q}`),
+        fetch(`${API_URL}/api/analytics/recent-activity?${q}&page=${page}&page_size=${pageSize}`)
+      ])
 
-      // 2. Daily Trends
-      const trendsRes = await fetch(`${API_URL}/api/analytics/trends?${q}`)
-      if (trendsRes.ok) setTrends(await trendsRes.json())
-
-      // 3. Status Distribution
-      const distRes = await fetch(`${API_URL}/api/analytics/status-distribution?${q}`)
+      if (ovRes.ok) setOverview(await ovRes.json())
+      if (trRes.ok) setTrends(await trRes.json())
       if (distRes.ok) setDistribution(await distRes.json())
-
-      // 4. Campaign Performance
-      const campRes = await fetch(`${API_URL}/api/analytics/campaign-performance?${q}`)
       if (campRes.ok) setCampaigns(await campRes.json())
-
-      // 5. Failures
-      const failRes = await fetch(`${API_URL}/api/analytics/failures?${q}`)
       if (failRes.ok) setFailures(await failRes.json())
 
-      // 6. Recent Activity (Paginated)
-      const actRes = await fetch(`${API_URL}/api/analytics/recent-activity?${q}&page=${page}&page_size=${pageSize}`)
       if (actRes.ok) {
         const actData = await actRes.json()
         setActivity(actData.items || [])
         setTotalPages(actData.total_pages || 1)
         setTotalCount(actData.total_count || 0)
       }
-    } catch (err: any) {
-      setErrorMsg(`Failed to connect to Analytics API: ${err.message}`)
+    } catch (e: any) {
+      setErrorMsg(`Failed to load analytics: ${e.message}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleExport(exportType: string) {
+    setExporting(true)
+    try {
+      const q = buildFilterQuery()
+      const res = await fetch(`${API_URL}/api/analytics/export?export_type=${exportType}&${q}`)
+      if (res.ok) {
+        const blob = await res.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `analytics_${exportType}_${new Date().toISOString().slice(0, 10)}.csv`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        window.URL.revokeObjectURL(url)
+      } else {
+        alert('Export failed. Check server connection.')
+      }
+    } catch (e: any) {
+      alert(`Export error: ${e.message}`)
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -190,7 +238,7 @@ export default function AnalyticsDashboard() {
     fetchDashboardData()
   }
 
-  function handleResetFilters() {
+  function resetFilters() {
     setStartDate('')
     setEndDate('')
     setSelectedCampaignId('ALL')
@@ -200,226 +248,223 @@ export default function AnalyticsDashboard() {
     setPage(1)
   }
 
-  async function handleDownloadCsv(type: string) {
-    setExporting(true)
-    try {
-      const q = buildFilterQuery()
-      const url = `${API_URL}/api/analytics/export?export_type=${type}&${q}`
-      const res = await fetch(url)
-      if (!res.ok) {
-        throw new Error(`Export failed with HTTP ${res.status}`)
-      }
-      const blob = await res.blob()
-      const downloadUrl = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = downloadUrl
-
-      const disposition = res.headers.get('content-disposition')
-      let filename = `report_${type}.csv`
-      if (disposition && disposition.includes('filename=')) {
-        filename = disposition.split('filename=')[1].replace(/"/g, '').trim()
-      }
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(downloadUrl)
-    } catch (err: any) {
-      alert(`Export error: ${err.message}`)
-    } finally {
-      setExporting(false)
-    }
-  }
-
-  function getStatusBadge(status: string) {
-    let bg = '#f1f5f9'
-    let text = '#475569'
-    let border = '#cbd5e1'
-
-    switch (status) {
-      case 'SMTP_ACCEPTED':
-        bg = '#f0fdf4'; text = '#166534'; border = '#bbf7d0'; break
-      case 'DELIVERY_CONFIRMED':
-        bg = '#ecfdf5'; text = '#065f46'; border = '#a7f3d0'; break
-      case 'SIMULATED_SUCCESS':
-        bg = '#eff6ff'; text = '#1e40af'; border = '#bfdbfe'; break
-      case 'FAILED':
-        bg = '#fef2f2'; text = '#991b1b'; border = '#fecaca'; break
-      case 'RETRY_PENDING':
-        bg = '#fffbeb'; text = '#92400e'; border = '#fde68a'; break
-      case 'DELIVERY_UNCERTAIN':
-        bg = '#faf5ff'; text = '#6b21a8'; border = '#e9d5ff'; break
-      case 'SKIPPED_INACTIVE':
-        bg = '#f8fafc'; text = '#64748b'; border = '#e2e8f0'; break
-    }
-
-    return (
-      <span style={{
-        display: 'inline-block',
-        padding: '3px 8px',
-        fontSize: 11,
-        fontWeight: 600,
-        borderRadius: 4,
-        background: bg,
-        color: text,
-        border: `1px solid ${border}`,
-        whiteSpace: 'nowrap'
-      }}>
-        {status}
-      </span>
-    )
-  }
-
-  function getModeBadge(mode: string) {
-    const isLive = mode === 'LIVE_SMTP'
-    return (
-      <span style={{
-        display: 'inline-block',
-        padding: '2px 6px',
-        fontSize: 10,
-        fontWeight: 700,
-        borderRadius: 4,
-        background: isLive ? '#fef3c7' : '#e0f2fe',
-        color: isLive ? '#92400e' : '#0369a1',
-        border: `1px solid ${isLive ? '#fcd34d' : '#bae6fd'}`,
-        letterSpacing: '0.04em'
-      }}>
-        {isLive ? 'LIVE' : 'SIMULATION'}
-      </span>
-    )
-  }
+  const maxTrend = Math.max(...trends.map((t) => t.total), 1)
 
   return (
-    <div style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 20px', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#0f172a' }}>
-
-      {/* Top Header & Breadcrumbs */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, borderBottom: '1px solid #e2e8f0', paddingBottom: 20, flexWrap: 'wrap', gap: 16 }}>
-        <div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6, fontSize: 13, color: '#64748b' }}>
-            <a href="/" style={{ color: '#64748b', textDecoration: 'none' }}>Home</a>
-            <span>/</span>
-            <a href="/employees" style={{ color: '#64748b', textDecoration: 'none' }}>Workforce</a>
-            <span>/</span>
-            <a href="/templates" style={{ color: '#64748b', textDecoration: 'none' }}>Templates</a>
-            <span>/</span>
-            <a href="/campaigns" style={{ color: '#64748b', textDecoration: 'none' }}>Campaigns</a>
-            <span>/</span>
-            <span style={{ fontWeight: 600, color: '#0f172a' }}>Delivery Analytics</span>
-          </div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, color: '#0f172a' }}>
-            Delivery Analytics &amp; Reporting
-          </h1>
-          <p style={{ color: '#64748b', margin: '4px 0 0 0', fontSize: 14 }}>
-            Real-time delivery telemetry, campaign performance audit trails, failure root-cause analysis, and compliance exports.
-          </p>
+    <AppLayout
+      title="Delivery Analytics & Reporting"
+      subtitle="Execution volume, delivery metrics, SMTP reliability analysis, and exportable audit records"
+      actions={
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<RefreshCw className="w-4 h-4" />}
+            onClick={fetchDashboardData}
+          >
+            Refresh
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Download className="w-4 h-4" />}
+            loading={exporting}
+            onClick={() => handleExport('complete')}
+          >
+            Export Audit CSV
+          </Button>
         </div>
-
-        {/* CSV Export Quick Actions */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => handleDownloadCsv('complete')}
-            disabled={exporting}
-            style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-            title="Download full audit log respecting active filters"
-          >
-            📥 Full Audit CSV
-          </button>
-          <button
-            onClick={() => handleDownloadCsv('campaigns')}
-            disabled={exporting}
-            style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-            title="Download campaign delivery breakdown"
-          >
-            📊 Campaigns CSV
-          </button>
-          <button
-            onClick={() => handleDownloadCsv('failures')}
-            disabled={exporting}
-            style={{ backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-            title="Export error log for troubleshooting"
-          >
-            ⚠️ Failures CSV
-          </button>
-          <button
-            onClick={() => handleDownloadCsv('uncertain')}
-            disabled={exporting}
-            style={{ backgroundColor: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-            title="Export uncertain delivery attempts"
-          >
-            ❓ Uncertain CSV
-          </button>
-        </div>
-      </header>
-
-      {/* Error alert banner */}
+      }
+    >
       {errorMsg && (
-        <div style={{ padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, marginBottom: 20, color: '#991b1b', fontSize: 13 }}>
-          {errorMsg}
+        <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between shadow-sm">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <span className="font-medium">{errorMsg}</span>
+          </div>
+          <button onClick={() => setErrorMsg('')} className="text-rose-600 hover:text-rose-800 text-xs font-semibold">
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Filter & Search Bar */}
-      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px', marginBottom: 24, boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
-        <form onSubmit={handleSearchSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, alignItems: 'flex-end' }}>
-          
+      {/* 8 Metric KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <KPICard
+          title="Total Executions"
+          value={overview?.total_executions ?? 0}
+          icon={BarChart3}
+          trendText="All database dispatches"
+          trendUp={true}
+          accentColor="indigo"
+          loading={loading}
+        />
+        <KPICard
+          title="Simulated Emails"
+          value={overview?.simulated_emails ?? 0}
+          icon={ShieldCheck}
+          trendText="Dry-run safety previews"
+          trendUp={true}
+          accentColor="teal"
+          loading={loading}
+        />
+        <KPICard
+          title="SMTP Accepted"
+          value={overview?.smtp_accepted ?? 0}
+          icon={TrendingUp}
+          trendText="Relayed to SMTP host"
+          trendUp={true}
+          accentColor="blue"
+          loading={loading}
+        />
+        <KPICard
+          title="Delivery Confirmed"
+          value={overview?.delivery_confirmed ?? 0}
+          icon={CheckCircle2}
+          trendText="Positive delivery receipts"
+          trendUp={true}
+          accentColor="green"
+          loading={loading}
+        />
+        <KPICard
+          title="Failed Emails"
+          value={overview?.failed_emails ?? 0}
+          icon={XCircle}
+          trendText={overview ? `${overview.failure_rate.toFixed(1)}% failure rate` : ''}
+          trendUp={false}
+          accentColor="rose"
+          loading={loading}
+        />
+        <KPICard
+          title="Retry Pending"
+          value={overview?.retry_pending ?? 0}
+          icon={Clock}
+          trendText="Queued with backoff"
+          trendUp={false}
+          accentColor="amber"
+          loading={loading}
+        />
+        <KPICard
+          title="Delivery Uncertain"
+          value={overview?.delivery_uncertain ?? 0}
+          icon={HelpCircle}
+          trendText="Awaiting admin review"
+          trendUp={false}
+          accentColor="purple"
+          loading={loading}
+        />
+        <KPICard
+          title="Skipped Inactive"
+          value={overview?.skipped_inactive ?? 0}
+          icon={UserX}
+          trendText="Terminated or leave status"
+          trendUp={true}
+          accentColor="blue"
+          loading={loading}
+        />
+      </div>
+
+      {/* Modern Filter Toolbar */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 mb-8 shadow-sm">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+          <div className="flex items-center space-x-2">
+            <Filter className="w-4 h-4 text-indigo-600" />
+            <span className="font-bold text-slate-800 text-sm">Dashboard Analytics Filters</span>
+          </div>
+          <button
+            onClick={resetFilters}
+            className="text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors"
+          >
+            Reset All Filters
+          </button>
+        </div>
+
+        <form onSubmit={handleSearchSubmit} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>From Date</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+              Start Date
+            </label>
             <input
               type="date"
               value={startDate}
-              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, boxSizing: 'border-box' }}
+              onChange={(e) => {
+                setStartDate(e.target.value)
+                setPage(1)
+              }}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>To Date</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+              End Date
+            </label>
             <input
               type="date"
               value={endDate}
-              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, boxSizing: 'border-box' }}
+              onChange={(e) => {
+                setEndDate(e.target.value)
+                setPage(1)
+              }}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             />
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>Campaign</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+              Campaign
+            </label>
             <select
               value={selectedCampaignId}
-              onChange={(e) => { setSelectedCampaignId(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff' }}
+              onChange={(e) => {
+                setSelectedCampaignId(e.target.value)
+                setPage(1)
+              }}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             >
               <option value="ALL">All Campaigns</option>
-              {availableCampaigns.map(c => (
-                <option key={c.id} value={c.id}>{c.campaign_name}</option>
+              {availableCampaigns.map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.campaign_name}
+                </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>Mode</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+              Mode
+            </label>
             <select
               value={selectedMode}
-              onChange={(e) => { setSelectedMode(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff' }}
+              onChange={(e) => {
+                setSelectedMode(e.target.value)
+                setPage(1)
+              }}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             >
               <option value="ALL">All Modes</option>
-              <option value="SIMULATION">Simulation (Dry-Run)</option>
-              <option value="LIVE_SMTP">Live SMTP Delivery</option>
+              <option value="SIMULATION">Simulation</option>
+              <option value="LIVE_SMTP">Live SMTP</option>
             </select>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>Status</label>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+              Status
+            </label>
             <select
               value={selectedStatus}
-              onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff' }}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value)
+                setPage(1)
+              }}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             >
               <option value="ALL">All Statuses</option>
+              <option value="SIMULATED_SUCCESS">SIMULATED_SUCCESS</option>
               <option value="SMTP_ACCEPTED">SMTP_ACCEPTED</option>
               <option value="DELIVERY_CONFIRMED">DELIVERY_CONFIRMED</option>
-              <option value="SIMULATED_SUCCESS">SIMULATED_SUCCESS</option>
               <option value="FAILED">FAILED</option>
               <option value="RETRY_PENDING">RETRY_PENDING</option>
               <option value="DELIVERY_UNCERTAIN">DELIVERY_UNCERTAIN</option>
@@ -427,469 +472,480 @@ export default function AnalyticsDashboard() {
             </select>
           </div>
 
-          <div style={{ gridColumn: 'span 2' }}>
-            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase' }}>Search Recipient / Subject</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+              Search Text
+            </label>
+            <div className="flex space-x-1.5">
               <input
                 type="text"
-                placeholder="e.g. kiran.patel@testcorp.com or Welcome"
+                placeholder="Email or subject..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ flex: 1, padding: '7px 10px', fontSize: 13, border: '1px solid #cbd5e1', borderRadius: 6 }}
+                className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
-              <button
-                type="submit"
-                style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-              >
-                Search
-              </button>
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6, padding: '7px 12px', fontSize: 13, cursor: 'pointer' }}
-              >
-                Reset
-              </button>
+              <Button variant="primary" size="sm" type="submit">
+                Go
+              </Button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Visual Analytics Grid: Daily Trends & Status Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+        {/* Daily Delivery Trends Chart */}
+        <div className="lg:col-span-7 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+                <TrendingUp className="w-4 h-4 text-indigo-600" />
+                <span>Daily Execution Volume Trends</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Simulated vs Live SMTP transmissions over time
+              </p>
+            </div>
+            <div className="flex items-center space-x-3 text-xs">
+              <span className="flex items-center space-x-1">
+                <span className="w-3 h-3 rounded bg-teal-500 inline-block" />
+                <span className="text-slate-600 font-medium">Simulated</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <span className="w-3 h-3 rounded bg-indigo-600 inline-block" />
+                <span className="text-slate-600 font-medium">Live SMTP</span>
+              </span>
             </div>
           </div>
 
-        </form>
-      </section>
+          {trends.length === 0 ? (
+            <div className="py-16 text-center text-slate-400 text-xs">
+              No daily trend data available for current date range.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="h-48 flex items-end justify-between gap-2 pt-6">
+                {trends.slice(-14).map((t) => {
+                  const simPct = (t.simulated / maxTrend) * 100
+                  const livePct = (t.live / maxTrend) * 100
+                  return (
+                    <div key={t.date} className="flex-1 flex flex-col items-center group relative h-full justify-end">
+                      {/* Tooltip */}
+                      <div className="opacity-0 group-hover:opacity-100 pointer-events-none absolute -top-10 bg-slate-900 text-white text-[10px] font-mono rounded px-2 py-1 shadow-md transition-opacity z-10 whitespace-nowrap">
+                        {t.date}: {t.total} total ({t.simulated} sim, {t.live} live)
+                      </div>
 
-      {/* KPI Cards Grid */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 12, marginBottom: 24 }}>
-        
-        {/* 1. Total Executions */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total Executions</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginTop: 4 }}>
-            {overview ? overview.total_executions : '-'}
-          </div>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>All Dispatches</span>
+                      <div className="w-full max-w-[28px] flex flex-col justify-end h-full">
+                        <div
+                          style={{ height: `${livePct}%` }}
+                          className="w-full bg-indigo-600 rounded-t-sm transition-all"
+                        />
+                        <div
+                          style={{ height: `${simPct}%` }}
+                          className="w-full bg-teal-500 rounded-b-sm transition-all"
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 mt-2 rotate-45 origin-left">
+                        {t.date.slice(5)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* 2. Simulated Emails */}
-        <div style={{ background: '#fff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Simulated</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#1e40af', marginTop: 4 }}>
-            {overview ? overview.simulated_emails : '-'}
+        {/* Status Distribution Breakdown */}
+        <div className="lg:col-span-5 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+                <Activity className="w-4 h-4 text-indigo-600" />
+                <span>Execution Status Distribution</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Outcome breakdown with computed percentage shares
+              </p>
+            </div>
           </div>
-          <span style={{ fontSize: 11, color: '#3b82f6' }}>Virtual Sandbox</span>
-        </div>
 
-        {/* 3. SMTP Accepted */}
-        <div style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.04em' }}>SMTP Accepted</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#166534', marginTop: 4 }}>
-            {overview ? overview.smtp_accepted : '-'}
+          <div className="space-y-4">
+            {distribution.map((item) => (
+              <div key={item.status} className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2">
+                    <StatusBadge status={item.status} />
+                    <span className="font-mono text-slate-500">{item.count}</span>
+                  </div>
+                  <span className="font-bold text-slate-700">{item.percentage.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      item.status.includes('SUCCESS') || item.status.includes('CONFIRMED')
+                        ? 'bg-teal-500'
+                        : item.status.includes('FAILED')
+                        ? 'bg-rose-500'
+                        : item.status.includes('RETRY')
+                        ? 'bg-amber-500'
+                        : item.status.includes('UNCERTAIN')
+                        ? 'bg-purple-500'
+                        : 'bg-indigo-500'
+                    }`}
+                    style={{ width: `${Math.min(item.percentage, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
-          <span style={{ fontSize: 11, color: '#16a34a' }}>Relayed by MTA</span>
         </div>
+      </div>
 
-        {/* 4. Delivery Confirmed */}
-        <div style={{ background: '#fff', border: '1px solid #a7f3d0', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Confirmed</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#065f46', marginTop: 4 }}>
-            {overview ? overview.delivery_confirmed : '-'}
-          </div>
-          <span style={{ fontSize: 11, color: '#059669' }}>Verified Inbox</span>
-        </div>
-
-        {/* 5. Failed Emails */}
-        <div style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Failed</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#991b1b', marginTop: 4 }}>
-            {overview ? overview.failed_emails : '-'}
-          </div>
-          <span style={{ fontSize: 11, color: '#dc2626' }}>Terminal Errors</span>
-        </div>
-
-        {/* 6. Retry Pending */}
-        <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Retry Pending</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#92400e', marginTop: 4 }}>
-            {overview ? overview.retry_pending : '-'}
-          </div>
-          <span style={{ fontSize: 11, color: '#d97706' }}>In Backoff Queue</span>
-        </div>
-
-        {/* 7. Delivery Uncertain */}
-        <div style={{ background: '#fff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#6b21a8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Uncertain</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#6b21a8', marginTop: 4 }}>
-            {overview ? overview.delivery_uncertain : '-'}
-          </div>
-          <span style={{ fontSize: 11, color: '#9333ea' }}>Post-Sub Timeout</span>
-        </div>
-
-        {/* 8. Skipped Inactive */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Skipped Inact.</span>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#475569', marginTop: 4 }}>
-            {overview ? overview.skipped_inactive : '-'}
-          </div>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>Safety Filter</span>
-        </div>
-
-      </section>
-
-      {/* Rates Bar */}
-      {overview && overview.live_total > 0 && (
-        <div style={{ display: 'flex', gap: 20, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 18px', marginBottom: 24, fontSize: 13, alignItems: 'center' }}>
+      {/* Campaign Performance Table */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm mb-8 overflow-hidden">
+        <div className="p-6 pb-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <strong style={{ color: '#0f172a' }}>Live Transmissions Evaluated:</strong> {overview.live_total}
+            <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+              <Layers className="w-4 h-4 text-indigo-600" />
+              <span>Campaign Delivery Performance</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Target audience delivery rates, simulated dispatches, and failure ratios
+            </p>
           </div>
-          <div>
-            <strong style={{ color: '#166534' }}>Delivery Rate:</strong> {overview.delivery_rate}%
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<FileSpreadsheet className="w-3.5 h-3.5" />}
+            onClick={() => handleExport('campaigns')}
+          >
+            Export Campaign CSV
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th className="py-3 px-5">Campaign Name</th>
+                <th className="py-3 px-5">Target Recipients</th>
+                <th className="py-3 px-5">Simulated</th>
+                <th className="py-3 px-5">SMTP Accepted</th>
+                <th className="py-3 px-5">Confirmed</th>
+                <th className="py-3 px-5">Failed</th>
+                <th className="py-3 px-5">Uncertain</th>
+                <th className="py-3 px-5">Skipped Inactive</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              {campaigns.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-xs text-slate-400">
+                    No campaign execution data found.
+                  </td>
+                </tr>
+              ) : (
+                campaigns.map((c) => (
+                  <tr key={c.campaign_id || c.campaign_name} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-3 px-5 font-semibold text-slate-900">
+                      {c.campaign_name}
+                      {c.campaign_id && (
+                        <span className="block text-[11px] font-mono text-slate-400">
+                          ID: #{c.campaign_id}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-5 font-mono text-xs">{c.total_recipients}</td>
+                    <td className="py-3 px-5 font-mono text-xs text-teal-700 font-semibold">{c.simulated}</td>
+                    <td className="py-3 px-5 font-mono text-xs text-indigo-700 font-semibold">{c.smtp_accepted}</td>
+                    <td className="py-3 px-5 font-mono text-xs text-green-700 font-semibold">{c.delivery_confirmed}</td>
+                    <td className="py-3 px-5 font-mono text-xs text-rose-700 font-semibold">{c.failed}</td>
+                    <td className="py-3 px-5 font-mono text-xs text-purple-700 font-semibold">{c.delivery_uncertain}</td>
+                    <td className="py-3 px-5 font-mono text-xs text-slate-400">{c.skipped_inactive}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Failure Root-Cause Analysis */}
+      {failures && failures.categories.length > 0 && (
+        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm mb-8 overflow-hidden p-6">
+          <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600" />
+                <span>Failure Diagnostics & Root Cause Analysis</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Classified error categories and recurring failure messages
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Download className="w-3.5 h-3.5" />}
+              onClick={() => handleExport('failures')}
+            >
+              Export Failures CSV
+            </Button>
           </div>
-          <div>
-            <strong style={{ color: '#991b1b' }}>Failure Rate:</strong> {overview.failure_rate}%
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                Failures by Error Category
+              </h4>
+              <div className="space-y-2">
+                {failures.categories.map((cat) => (
+                  <div key={cat.category} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/70 text-xs">
+                    <span className="font-semibold text-slate-700">{cat.category}</span>
+                    <span className="font-mono font-bold text-rose-600 px-2 py-0.5 rounded bg-rose-50 border border-rose-200">
+                      {cat.count} occurrences
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                Top Recurring Errors
+              </h4>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {failures.top_errors.map((err, i) => (
+                  <div key={i} className="p-3 rounded-xl bg-rose-50/40 border border-rose-100 text-xs">
+                    <p className="font-mono text-slate-800 break-words">{err.error_message}</p>
+                    <div className="flex items-center justify-between mt-1 text-[11px] text-slate-500 font-mono">
+                      <span>Seen {err.occurrences}x</span>
+                      {err.category && <span className="text-rose-600">{err.category}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Visualizations Section: Trends & Distribution */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 20, marginBottom: 28 }}>
-        
-        {/* A. Execution Trends Timeline */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '18px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px 0', color: '#0f172a' }}>
-            Daily Execution Volume
-          </h2>
-          <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px 0' }}>
-            Volume breakdown across simulation dry-runs and live SMTP dispatches.
-          </p>
+      {/* Paginated Recent Activity Log */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+        <div className="p-6 pb-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+              <Clock className="w-4 h-4 text-indigo-600" />
+              <span>Recent Activity Stream</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Showing {activity.length} of {totalCount} total audit records
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-slate-500">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
 
-          {trends.length === 0 ? (
-            <div style={{ padding: '36px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-              No execution records in selected date range.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {trends.map(t => {
-                const maxTotal = Math.max(...trends.map(x => x.total), 1)
-                const simPct = Math.round((t.simulated / maxTotal) * 100)
-                const livePct = Math.round((t.live / maxTotal) * 100)
-
-                return (
-                  <div key={t.date} style={{ fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontWeight: 600 }}>
-                      <span style={{ color: '#334155' }}>{t.date}</span>
-                      <span style={{ color: '#64748b' }}>
-                        Total: <strong>{t.total}</strong> (Sim: {t.simulated}, Live: {t.live})
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th className="py-3 px-5">Executed At (UTC)</th>
+                <th className="py-3 px-5">Recipient</th>
+                <th className="py-3 px-5">Subject</th>
+                <th className="py-3 px-5">Mode</th>
+                <th className="py-3 px-5">Status</th>
+                <th className="py-3 px-5">Attempts</th>
+                <th className="py-3 px-5 text-right">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              {activity.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center">
+                    <EmptyState
+                      icon={Clock}
+                      title="No execution logs found"
+                      description="No audit records match your selected criteria."
+                    />
+                  </td>
+                </tr>
+              ) : (
+                activity.map((item) => (
+                  <tr
+                    key={item.id}
+                    onClick={() => {
+                      setSelectedLog(item)
+                      setIsDrawerOpen(true)
+                    }}
+                    className="hover:bg-indigo-50/30 transition-colors cursor-pointer group"
+                  >
+                    <td className="py-3 px-5 font-mono text-xs text-slate-500 whitespace-nowrap">
+                      {item.executed_at ? new Date(item.executed_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-3 px-5 font-medium text-slate-900 group-hover:text-indigo-600 transition-colors">
+                      {item.recipient_email}
+                      {item.campaign_name && (
+                        <span className="block text-[11px] text-slate-400">
+                          {item.campaign_name}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-5 text-slate-700 max-w-xs truncate">
+                      {item.subject}
+                    </td>
+                    <td className="py-3 px-5">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700">
+                        {item.execution_mode}
                       </span>
-                    </div>
-                    {/* Stacked Visual Bar */}
-                    <div style={{ height: 14, width: '100%', background: '#f1f5f9', borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
-                      <div style={{ width: `${simPct}%`, background: '#3b82f6' }} title={`Simulated: ${t.simulated}`} />
-                      <div style={{ width: `${livePct}%`, background: '#10b981' }} title={`Live: ${t.live}`} />
-                    </div>
-                  </div>
-                )
-              })}
-              <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11, color: '#64748b' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 10, height: 10, background: '#3b82f6', borderRadius: 2 }} /> Simulated
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ width: 10, height: 10, background: '#10b981', borderRadius: 2 }} /> Live SMTP
+                    </td>
+                    <td className="py-3 px-5">
+                      <StatusBadge status={item.execution_status} />
+                    </td>
+                    <td className="py-3 px-5 font-mono text-xs text-center">
+                      {item.attempt_count}
+                    </td>
+                    <td className="py-3 px-5 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedLog(item)
+                          setIsDrawerOpen(true)
+                        }}
+                      >
+                        Inspect
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Log Detail Drawer */}
+      <Drawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        title="Execution Audit Record"
+        subtitle={selectedLog ? `Log Record #${selectedLog.id}` : ''}
+        size="md"
+      >
+        {selectedLog && (
+          <div className="space-y-6">
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                Execution Status
+              </h4>
+              <div className="flex items-center justify-between">
+                <StatusBadge status={selectedLog.execution_status} />
+                <span className="text-xs font-mono text-slate-500">
+                  Mode: {selectedLog.execution_mode}
                 </span>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* B. Delivery Status Distribution */}
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '18px 20px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px 0', color: '#0f172a' }}>
-            Status Distribution
-          </h2>
-          <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px 0' }}>
-            Proportion of all processed messages categorized by final execution status.
-          </p>
-
-          {distribution.length === 0 ? (
-            <div style={{ padding: '36px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-              No status distribution data available.
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                Email Message Details
+              </h4>
+              <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Recipient:</span>
+                  <span className="font-mono text-slate-900">{selectedLog.recipient_email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Subject:</span>
+                  <span className="font-semibold text-slate-900">{selectedLog.subject}</span>
+                </div>
+                {selectedLog.campaign_name && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Campaign:</span>
+                    <span className="text-indigo-600 font-medium">{selectedLog.campaign_name}</span>
+                  </div>
+                )}
+                {selectedLog.reminder_title && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Reminder:</span>
+                    <span className="text-indigo-600 font-medium">{selectedLog.reminder_title}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Attempts:</span>
+                  <span className="font-mono text-slate-800">{selectedLog.attempt_count}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Timestamp:</span>
+                  <span className="font-mono text-slate-800">
+                    {selectedLog.executed_at ? new Date(selectedLog.executed_at).toISOString() : '—'}
+                  </span>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {distribution.map(d => (
-                <div key={d.status} style={{ fontSize: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontWeight: 600 }}>
-                    <span>{getStatusBadge(d.status)}</span>
-                    <span style={{ color: '#475569' }}>
-                      {d.count} ({d.percentage}%)
+
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                Technical Message Identifiers
+              </h4>
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2 text-xs font-mono">
+                <div>
+                  <span className="text-slate-400 block mb-0.5">RFC 5322 Message-ID:</span>
+                  <span className="text-slate-900 break-all">{selectedLog.message_id || 'None (Simulated)'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">SMTP Server Queue ID:</span>
+                  <span className="text-slate-900 break-all">{selectedLog.smtp_queue_id || 'None'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Provider Message ID:</span>
+                  <span className="text-slate-900 break-all">{selectedLog.provider_message_id || 'None'}</span>
+                </div>
+              </div>
+            </div>
+
+            {selectedLog.error_message && (
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-rose-500 mb-2">
+                  Failure Diagnostics
+                </h4>
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/50 space-y-1">
+                  {selectedLog.error_category && (
+                    <span className="inline-block px-2 py-0.5 bg-rose-100 text-rose-800 text-[11px] font-bold rounded">
+                      {selectedLog.error_category}
                     </span>
-                  </div>
-                  <div style={{ height: 8, width: '100%', background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        height: '100%',
-                        width: `${d.percentage}%`,
-                        background:
-                          d.status === 'SMTP_ACCEPTED' ? '#16a34a' :
-                          d.status === 'DELIVERY_CONFIRMED' ? '#059669' :
-                          d.status === 'SIMULATED_SUCCESS' ? '#2563eb' :
-                          d.status === 'FAILED' ? '#dc2626' :
-                          d.status === 'RETRY_PENDING' ? '#d97706' :
-                          d.status === 'DELIVERY_UNCERTAIN' ? '#9333ea' : '#94a3b8'
-                      }}
-                    />
-                  </div>
+                  )}
+                  <p className="text-xs font-mono text-rose-900 mt-2 break-words">
+                    {selectedLog.error_message}
+                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </section>
-
-      {/* C. Campaign Performance Breakdown */}
-      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '20px', marginBottom: 28, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
-          Campaign Performance Summary
-        </h2>
-        <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px 0' }}>
-          Aggregate recipient fulfillment, acceptance, failures, and retry statuses per campaign.
-        </p>
-
-        {campaigns.length === 0 ? (
-          <div style={{ padding: '24px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-            No campaign activity found matching criteria.
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: 11, textTransform: 'uppercase' }}>
-                  <th style={{ padding: '8px 12px' }}>Campaign Name</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Targeted</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Logged</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Simulated</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Accepted</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Confirmed</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Failed</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Retrying</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Uncertain</th>
-                </tr>
-              </thead>
-              <tbody>
-                {campaigns.map(c => (
-                  <tr key={c.campaign_id || 'unlinked'} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: 600, color: '#0f172a' }}>
-                      {c.campaign_name}
-                      {c.campaign_id && <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8' }}>#{c.campaign_id}</span>}
-                    </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#475569' }}>{c.total_recipients}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 700 }}>{c.total_logged}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#2563eb' }}>{c.simulated}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>{c.smtp_accepted}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: '#059669', fontWeight: 600 }}>{c.delivery_confirmed}</td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: c.failed > 0 ? '#dc2626' : '#94a3b8', fontWeight: c.failed > 0 ? 700 : 400 }}>
-                      {c.failed}
-                    </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: c.retry_pending > 0 ? '#d97706' : '#94a3b8' }}>
-                      {c.retry_pending}
-                    </td>
-                    <td style={{ padding: '10px 10px', textAlign: 'right', color: c.delivery_uncertain > 0 ? '#9333ea' : '#94a3b8', fontWeight: c.delivery_uncertain > 0 ? 700 : 400 }}>
-                      {c.delivery_uncertain}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* D. Failure Analysis */}
-      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '20px', marginBottom: 28, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
-          Failure Diagnostics &amp; Error Analysis
-        </h2>
-        <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px 0' }}>
-          Categorized root-cause classification and recurring error diagnosis.
-        </p>
-
-        {(!failures || failures.total_failures === 0) ? (
-          <div style={{ padding: '24px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, color: '#166534', fontSize: 13, textAlign: 'center' }}>
-            🎉 <strong>Zero Failures Recorded:</strong> All message execution attempts in the selected range concluded successfully or are in valid simulation.
-          </div>
-        ) : (
-          <div>
-            {/* Category Badges */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-              {failures.categories.map(cat => (
-                <div key={cat.category} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '8px 12px', fontSize: 12 }}>
-                  <span style={{ fontWeight: 700, color: '#991b1b' }}>{cat.category}:</span>{' '}
-                  <span style={{ color: '#b91c1c', fontWeight: 600 }}>{cat.count} occurrence(s)</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Top Error Messages Table */}
-            {failures.top_errors.length > 0 && (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b', textTransform: 'uppercase', fontSize: 11 }}>
-                      <th style={{ padding: '6px 10px' }}>Error Diagnostic Detail</th>
-                      <th style={{ padding: '6px 10px' }}>Category</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>Occurrences</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>Last Seen (UTC)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {failures.top_errors.map((err, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '8px 10px', color: '#991b1b', fontFamily: 'monospace', maxWidth: 450, wordBreak: 'break-word' }}>
-                          {err.error_message}
-                        </td>
-                        <td style={{ padding: '8px 10px', color: '#475569' }}>{err.category}</td>
-                        <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>{err.occurrences}</td>
-                        <td style={{ padding: '8px 10px', textAlign: 'right', color: '#64748b' }}>
-                          {err.last_seen ? new Date(err.last_seen).toLocaleString() : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             )}
           </div>
         )}
-      </section>
-
-      {/* E. Recent Activity Log (Paginated) */}
-      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-          <div>
-            <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 2px 0', color: '#0f172a' }}>
-              Recent Execution Activity
-            </h2>
-            <span style={{ fontSize: 12, color: '#64748b' }}>
-              Showing {activity.length} of {totalCount} matching execution records
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-            <label style={{ color: '#64748b' }}>Rows per page:</label>
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              style={{ padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: 4, background: '#fff' }}
-            >
-              <option value={10}>10</option>
-              <option value={15}>15</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-            </select>
-          </div>
-        </div>
-
-        {activity.length === 0 ? (
-          <div style={{ padding: '36px 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-            No execution logs match the selected filter criteria.
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: 11, textTransform: 'uppercase' }}>
-                  <th style={{ padding: '8px 10px' }}>ID</th>
-                  <th style={{ padding: '8px 10px' }}>Mode</th>
-                  <th style={{ padding: '8px 10px' }}>Status</th>
-                  <th style={{ padding: '8px 10px' }}>Recipient Email</th>
-                  <th style={{ padding: '8px 10px' }}>Subject</th>
-                  <th style={{ padding: '8px 10px' }}>Campaign / Job</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'center' }}>Att.</th>
-                  <th style={{ padding: '8px 10px' }}>Message-ID / Diagnostics</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Executed At (UTC)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activity.map(row => (
-                  <tr key={row.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px', fontSize: 12, color: '#64748b' }}>#{row.id}</td>
-                    <td style={{ padding: '10px' }}>{getModeBadge(row.execution_mode)}</td>
-                    <td style={{ padding: '10px' }}>{getStatusBadge(row.execution_status)}</td>
-                    <td style={{ padding: '10px', fontWeight: 600, color: '#0f172a' }}>{row.recipient_email}</td>
-                    <td style={{ padding: '10px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.subject}>
-                      {row.subject}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: 12, color: '#475569' }}>
-                      {row.campaign_name || row.reminder_title || <span style={{ color: '#94a3b8' }}>Direct</span>}
-                    </td>
-                    <td style={{ padding: '10px', textAlign: 'center', fontWeight: 600, color: row.attempt_count > 1 ? '#d97706' : '#64748b' }}>
-                      {row.attempt_count}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: 11, color: '#64748b', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {row.message_id ? (
-                        <code style={{ fontSize: 10, background: '#f8fafc', padding: '2px 4px', borderRadius: 3 }} title={row.message_id}>
-                          {row.message_id}
-                        </code>
-                      ) : row.error_message ? (
-                        <span style={{ color: '#dc2626' }} title={row.error_message}>{row.error_message}</span>
-                      ) : (
-                        <span style={{ color: '#cbd5e1' }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
-                      {row.executed_at ? new Date(row.executed_at).toLocaleString() : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination Bar */}
-        {totalPages > 1 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 12, fontSize: 13 }}>
-            <span style={{ color: '#64748b' }}>
-              Page <strong>{page}</strong> of <strong>{totalPages}</strong>
-            </span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 6,
-                  border: '1px solid #cbd5e1',
-                  background: page <= 1 ? '#f8fafc' : '#fff',
-                  color: page <= 1 ? '#cbd5e1' : '#0f172a',
-                  cursor: page <= 1 ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                  fontSize: 12
-                }}
-              >
-                Previous
-              </button>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 6,
-                  border: '1px solid #cbd5e1',
-                  background: page >= totalPages ? '#f8fafc' : '#fff',
-                  color: page >= totalPages ? '#cbd5e1' : '#0f172a',
-                  cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-                  fontWeight: 600,
-                  fontSize: 12
-                }}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-
-      </section>
-
-    </div>
+      </Drawer>
+    </AppLayout>
   )
 }

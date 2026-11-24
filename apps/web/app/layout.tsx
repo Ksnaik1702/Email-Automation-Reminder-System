@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import React from 'react'
+import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Email Automation & Reminder System',
-  description: 'Manage contacts, campaign templates, recurring schedules, and delivery telemetry',
+  title: 'Workforce Hub & Email Automation',
+  description: 'Enterprise workforce management, email automation, campaign orchestration, and delivery telemetry',
 }
 
 export default function RootLayout({
@@ -13,7 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif', backgroundColor: '#f8fafc', color: '#1e293b' }}>
+      <body className="min-h-screen bg-[#F5F7FB] text-[#1E293B]">
         {children}
       </body>
     </html>

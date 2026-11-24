@@ -1,6 +1,32 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import AppLayout from '../../components/AppLayout'
+import KPICard from '../../components/KPICard'
+import StatusBadge from '../../components/StatusBadge'
+import Button from '../../components/Button'
+import SearchInput from '../../components/SearchInput'
+import Modal from '../../components/Modal'
+import EmptyState from '../../components/EmptyState'
+import {
+  Users,
+  UserCheck,
+  UserX,
+  Building2,
+  Plus,
+  Upload,
+  Download,
+  Edit,
+  Trash2,
+  RotateCcw,
+  CheckCircle2,
+  AlertCircle,
+  FileSpreadsheet,
+  AlertTriangle,
+  Mail,
+  Briefcase,
+  Globe
+} from 'lucide-react'
 
 interface Employee {
   id: number
@@ -68,10 +94,10 @@ export default function EmployeeManagementPage() {
     department: 'Operations',
     designation: 'Associate',
     timezone: 'Asia/Kolkata',
-    employment_status: 'Active'
+    employment_status: 'Active',
   })
 
-  // Import Summary
+  // Import State
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
   const [importing, setImporting] = useState<boolean>(false)
 
@@ -135,7 +161,7 @@ export default function EmployeeManagementPage() {
       const res = await fetch(`${API_URL}/api/employees`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(formData),
       })
 
       if (res.ok) {
@@ -170,8 +196,8 @@ export default function EmployeeManagementPage() {
           department: formData.department,
           designation: formData.designation,
           timezone: formData.timezone,
-          employment_status: formData.employment_status
-        })
+          employment_status: formData.employment_status,
+        }),
       })
 
       if (res.ok) {
@@ -195,7 +221,7 @@ export default function EmployeeManagementPage() {
     setSuccessMsg('')
     try {
       const res = await fetch(`${API_URL}/api/employees/${currentEmployee.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       })
 
       if (res.ok) {
@@ -224,7 +250,7 @@ export default function EmployeeManagementPage() {
       department: emp.department || '',
       designation: emp.designation || '',
       timezone: emp.timezone || 'Asia/Kolkata',
-      employment_status: emp.employment_status || 'Active'
+      employment_status: emp.employment_status || 'Active',
     })
     setShowEditModal(true)
   }
@@ -243,7 +269,7 @@ export default function EmployeeManagementPage() {
       department: 'Operations',
       designation: 'Associate',
       timezone: 'Asia/Kolkata',
-      employment_status: 'Active'
+      employment_status: 'Active',
     })
   }
 
@@ -261,7 +287,7 @@ export default function EmployeeManagementPage() {
     try {
       const res = await fetch(`${API_URL}/api/employees/import-csv`, {
         method: 'POST',
-        body: uploadData
+        body: uploadData,
       })
 
       if (res.ok) {
@@ -289,466 +315,625 @@ export default function EmployeeManagementPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#0f172a' }}>
-      
-      {/* Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, borderBottom: '1px solid #e2e8f0', paddingBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
-            <a href="/" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Home</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Workforce</span>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/templates" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Templates</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/campaigns" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Campaigns</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/analytics" style={{ color: '#2563eb', textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>Analytics &rarr;</a>
-          </div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>Employee Directory</h1>
-          <p style={{ color: '#64748b', margin: '4px 0 0 0', fontSize: 14 }}>
-            Centralized corporate workforce database and recipient synchronization engine
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            onClick={() => { resetForm(); setShowAddModal(true); }}
-            style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-          >
-            + Add Employee
-          </button>
-          <button
-            onClick={() => { setImportSummary(null); setShowImportModal(true); }}
-            style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-          >
-            Import CSV
-          </button>
-          <button
+    <AppLayout
+      title="Corporate Employee Directory"
+      subtitle="Unified corporate workforce repository, targeting criteria, and employee records"
+      breadcrumbs={[{ label: 'Employees' }]}
+      actions={
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Download}
             onClick={handleExport}
-            style={{ backgroundColor: '#fff', color: '#0f172a', border: '1px solid #cbd5e1', borderRadius: 6, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
           >
             Export CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Upload}
+            onClick={() => {
+              setImportSummary(null)
+              setShowImportModal(true)
+            }}
+          >
+            Import CSV
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Plus}
+            onClick={() => {
+              resetForm()
+              setShowAddModal(true)
+            }}
+          >
+            Add Employee
+          </Button>
+        </div>
+      }
+    >
+      {/* Notifications */}
+      {successMsg && (
+        <div className="flex items-center justify-between p-4 mb-6 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 animate-in fade-in">
+          <div className="flex items-center gap-2.5 font-medium">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMsg('')}
+            className="text-xs font-semibold uppercase opacity-60 hover:opacity-100"
+          >
+            Dismiss
           </button>
         </div>
-      </header>
-
-      {/* Alert Notices */}
-      {successMsg && (
-        <div style={{ padding: '12px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, marginBottom: 20, color: '#166534', fontSize: 13 }}>
-          {successMsg}
-        </div>
       )}
+
       {errorMsg && (
-        <div style={{ padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, marginBottom: 20, color: '#991b1b', fontSize: 13 }}>
-          {errorMsg}
+        <div className="flex items-center justify-between p-4 mb-6 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-800 animate-in fade-in">
+          <div className="flex items-center gap-2.5 font-medium">
+            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+          <button
+            onClick={() => setErrorMsg('')}
+            className="text-xs font-semibold uppercase opacity-60 hover:opacity-100"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Metrics Cards */}
-      {stats && (
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Workforce</span>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#0f172a', marginTop: 4 }}>{stats.total_employees}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#16a34a', textTransform: 'uppercase' }}>Active Employees</span>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>{stats.active_employees}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', textTransform: 'uppercase' }}>Inactive / Leave</span>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#dc2626', marginTop: 4 }}>{stats.inactive_employees}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase' }}>Departments</span>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#2563eb', marginTop: 4 }}>{stats.departments_count}</div>
-          </div>
-        </section>
-      )}
-
-      {/* Filter and Search Bar */}
-      <section style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          type="text"
-          placeholder="Search by name, ID, or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ flex: 1, minWidth: 260, padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+      {/* 4 KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <KPICard
+          title="Total Employees"
+          value={stats?.total_employees ?? 0}
+          icon={Users}
+          accent="indigo"
+          subtitle="Corporate directory headcount"
+          loading={loading && !stats}
         />
+        <KPICard
+          title="Active Employees"
+          value={stats?.active_employees ?? 0}
+          icon={UserCheck}
+          accent="emerald"
+          badge={
+            stats && stats.total_employees > 0
+              ? `${Math.round((stats.active_employees / stats.total_employees) * 100)}%`
+              : '0%'
+          }
+          badgeType="success"
+          subtitle="Eligible for notification campaigns"
+          loading={loading && !stats}
+        />
+        <KPICard
+          title="Inactive / Leave"
+          value={stats?.inactive_employees ?? 0}
+          icon={UserX}
+          accent="amber"
+          subtitle="Excluded by delivery safety filters"
+          loading={loading && !stats}
+        />
+        <KPICard
+          title="Departments"
+          value={stats?.departments_count ?? departments.length}
+          icon={Building2}
+          accent="purple"
+          subtitle="Active organizational units"
+          loading={loading && !stats}
+        />
+      </div>
 
-        <select
-          value={selectedDept}
-          onChange={(e) => setSelectedDept(e.target.value)}
-          style={{ padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-        >
-          <option value="All">All Departments</option>
-          {departments.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
+      {/* Filter & Search Toolbar */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs mb-6">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex-1 max-w-md">
+            <SearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search by name, employee code, or email..."
+            />
+          </div>
 
-        <select
-          value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value)}
-          style={{ padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-        >
-          <option value="All">All Statuses</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-          <option value="On Leave">On Leave</option>
-          <option value="Terminated">Terminated</option>
-        </select>
-      </section>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Department Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Dept:</span>
+              <select
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+                className="text-xs py-2 px-3 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-xs"
+              >
+                <option value="All">All Departments</option>
+                {departments.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      {/* Employee Data Table */}
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Employee Code</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Full Name</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Email Address</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Department</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Designation</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Status</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#64748b' }}>
-                  Loading workforce data...
-                </td>
-              </tr>
-            ) : employees.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ padding: 36, textAlign: 'center', color: '#94a3b8' }}>
-                  No employee records matched your filter criteria.
-                </td>
-              </tr>
-            ) : (
-              employees.map((emp) => (
-                <tr key={emp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontWeight: 600, color: '#1e293b' }}>
-                    {emp.employee_id}
-                  </td>
-                  <td style={{ padding: '12px 16px', fontWeight: 500 }}>
-                    {emp.full_name}
-                  </td>
-                  <td style={{ padding: '12px 16px', color: '#475569' }}>
-                    {emp.email}
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', background: '#f1f5f9', borderRadius: 4, fontSize: 11, fontWeight: 500 }}>
-                      {emp.department || 'N/A'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: '#475569' }}>
-                    {emp.designation || 'Staff'}
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 12,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      background: emp.employment_status === 'Active' ? '#dcfce7' : '#fee2e2',
-                      color: emp.employment_status === 'Active' ? '#15803d' : '#b91c1c'
-                    }}>
-                      {emp.employment_status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                    <button
-                      onClick={() => openEdit(emp)}
-                      style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 600, marginRight: 12, fontSize: 12 }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => openDelete(emp)}
-                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Status:</span>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="text-xs py-2 px-3 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-xs"
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Terminated">Terminated</option>
+              </select>
+            </div>
+
+            {(searchTerm || selectedDept !== 'All' || selectedStatus !== 'All') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={RotateCcw}
+                onClick={() => {
+                  setSearchTerm('')
+                  setSelectedDept('All')
+                  setSelectedStatus('All')
+                }}
+              >
+                Reset
+              </Button>
             )}
-          </tbody>
-        </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Employee Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        {loading && employees.length === 0 ? (
+          <div className="p-12 text-center text-sm text-slate-400">
+            Loading corporate workforce records...
+          </div>
+        ) : employees.length === 0 ? (
+          <div className="p-8">
+            <EmptyState
+              title="No employees found"
+              description="No employee records match your search criteria or directory filters."
+              icon={Users}
+              actionLabel="Add New Employee"
+              onAction={() => {
+                resetForm()
+                setShowAddModal(true)
+              }}
+              actionIcon={Plus}
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[#F8FAFC] text-slate-600 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Code</th>
+                  <th className="py-3 px-4">Full Name</th>
+                  <th className="py-3 px-4">Corporate Email</th>
+                  <th className="py-3 px-4">Department</th>
+                  <th className="py-3 px-4">Designation</th>
+                  <th className="py-3 px-4">Timezone</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {employees.map((emp) => {
+                  const initials = emp.full_name
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .substring(0, 2)
+                    .toUpperCase()
+
+                  return (
+                    <tr
+                      key={emp.id}
+                      className="hover:bg-slate-50/70 transition-colors group"
+                    >
+                      <td className="py-3.5 px-4 font-mono text-xs font-bold text-slate-700">
+                        {emp.employee_id}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                            {initials}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-900 leading-tight">
+                              {emp.full_name}
+                            </p>
+                            <p className="text-xs text-slate-400">{emp.company}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 text-xs font-mono">
+                        {emp.email}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          {emp.department || 'General'}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-700">
+                        {emp.designation || 'Staff'}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-slate-500 font-mono">
+                        {emp.timezone}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <StatusBadge status={emp.employment_status} size="sm" />
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => openEdit(emp)}
+                            title="Edit Employee"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => openDelete(emp)}
+                            title="Delete Employee"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Table Footer */}
+        <div className="px-4 py-3 bg-slate-50/50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+          <span>Showing {employees.length} workforce records</span>
+          <span>Database: SQLite Unified Storage</span>
+        </div>
       </div>
 
       {/* ADD EMPLOYEE MODAL */}
-      {showAddModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 28, maxWidth: 520, width: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 18, fontWeight: 700 }}>Add New Employee</h2>
-            <form onSubmit={handleCreate}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Employee Code *</label>
-                  <input
-                    required
-                    placeholder="e.g. EMP-101"
-                    value={formData.employee_id}
-                    onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Full Name *</label>
-                  <input
-                    required
-                    placeholder="e.g. Priya Patel"
-                    value={formData.full_name}
-                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Corporate Email *</label>
-                <input
-                  required
-                  type="email"
-                  placeholder="name@company.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Department</label>
-                  <input
-                    value={formData.department}
-                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Designation</label>
-                  <input
-                    value={formData.designation}
-                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Timezone</label>
-                  <input
-                    value={formData.timezone}
-                    onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Status</label>
-                  <select
-                    value={formData.employment_status}
-                    onChange={(e) => setFormData({ ...formData, employment_status: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, background: '#fff', boxSizing: 'border-box' }}
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="On Leave">On Leave</option>
-                    <option value="Terminated">Terminated</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  style={{ background: '#f1f5f9', border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                >
-                  Save Employee
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT MODAL */}
-      {showEditModal && currentEmployee && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 28, maxWidth: 520, width: '90%' }}>
-            <h2 style={{ margin: '0 0 16px 0', fontSize: 18, fontWeight: 700 }}>Edit Employee ({currentEmployee.employee_id})</h2>
-            <form onSubmit={handleUpdate}>
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Full Name</label>
-                <input
-                  required
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Email Address</label>
-                <input
-                  required
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Department</label>
-                  <input
-                    value={formData.department}
-                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Designation</label>
-                  <input
-                    value={formData.designation}
-                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Status</label>
-                <select
-                  value={formData.employment_status}
-                  onChange={(e) => setFormData({ ...formData, employment_status: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, background: '#fff', boxSizing: 'border-box' }}
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                  <option value="On Leave">On Leave</option>
-                  <option value="Terminated">Terminated</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  style={{ background: '#f1f5f9', border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-                >
-                  Update
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE CONFIRMATION MODAL */}
-      {showDeleteModal && currentEmployee && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 24, maxWidth: 440, width: '90%' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: 16, color: '#991b1b' }}>Confirm Deletion</h3>
-            <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Are you sure you want to delete employee <strong>{currentEmployee.full_name}</strong> ({currentEmployee.employee_id})? This action will cascade to associated scheduled reminders.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                style={{ background: '#f1f5f9', border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-              >
-                Delete Permanently
-              </button>
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add New Employee"
+        subtitle="Register a new employee record into the unified database"
+        maxWidth="lg"
+      >
+        <form onSubmit={handleCreate} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Employee Code *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. EMP-105"
+                value={formData.employee_id}
+                onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Full Name *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Priya Sharma"
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
             </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Corporate Email Address *
+            </label>
+            <input
+              type="email"
+              required
+              placeholder="e.g. priya.sharma@nexuscorp.com"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Company</label>
+              <input
+                type="text"
+                value={formData.company}
+                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+              <input
+                type="text"
+                value={formData.department}
+                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Designation</label>
+              <input
+                type="text"
+                value={formData.designation}
+                onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+              <select
+                value={formData.employment_status}
+                onChange={(e) => setFormData({ ...formData, employment_status: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Terminated">Terminated</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">IANA Timezone</label>
+            <input
+              type="text"
+              value={formData.timezone}
+              onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+              className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <Button variant="secondary" type="button" onClick={() => setShowAddModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit">
+              Save Employee
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* EDIT EMPLOYEE MODAL */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit Employee Record"
+        subtitle={`Updating information for ${formData.full_name} (${formData.employee_id})`}
+        maxWidth="lg"
+      >
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Employee Code (Read-Only)
+            </label>
+            <input
+              type="text"
+              disabled
+              value={formData.employee_id}
+              className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg bg-slate-100 text-slate-500 cursor-not-allowed font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+            <input
+              type="text"
+              required
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+              className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Corporate Email *
+            </label>
+            <input
+              type="email"
+              required
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Company</label>
+              <input
+                type="text"
+                value={formData.company}
+                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+              <input
+                type="text"
+                value={formData.department}
+                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Designation</label>
+              <input
+                type="text"
+                value={formData.designation}
+                onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+              <select
+                value={formData.employment_status}
+                onChange={(e) => setFormData({ ...formData, employment_status: e.target.value })}
+                className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="On Leave">On Leave</option>
+                <option value="Terminated">Terminated</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">IANA Timezone</label>
+            <input
+              type="text"
+              value={formData.timezone}
+              onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+              className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <Button variant="secondary" type="button" onClick={() => setShowEditModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit">
+              Update Employee
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Employee Record?"
+        subtitle="This operation cannot be undone."
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Are you sure you want to permanently remove employee{' '}
+            <strong className="text-slate-900">{currentEmployee?.full_name}</strong> (
+            <span className="font-mono text-xs">{currentEmployee?.employee_id}</span>)?
+          </p>
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" icon={Trash2} onClick={handleDelete}>
+              Delete Record
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
 
       {/* CSV IMPORT MODAL */}
-      {showImportModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 28, maxWidth: 640, width: '90%', maxHeight: '85vh', overflowY: 'auto' }}>
-            <h2 style={{ margin: '0 0 8px 0', fontSize: 18, fontWeight: 700 }}>Bulk Ingest Employees via CSV</h2>
-            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 18px 0' }}>
-              Upload a comma-separated file with headers: <code>employee_id</code>, <code>full_name</code>, <code>email</code>, <code>department</code>, <code>designation</code>.
-            </p>
-
+      <Modal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import Employees via CSV"
+        subtitle="Batch upload corporate records. Supported headers: employee_id, full_name, email, department, designation, timezone."
+        maxWidth="xl"
+      >
+        <div className="space-y-5">
+          <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center bg-slate-50 hover:bg-slate-100/60 transition-colors cursor-pointer relative">
             <input
               type="file"
               accept=".csv"
               onChange={handleFileUpload}
               disabled={importing}
-              style={{ display: 'block', width: '100%', padding: '12px', border: '2px dashed #cbd5e1', borderRadius: 6, marginBottom: 18 }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
-
-            {importing && <p style={{ fontSize: 13, color: '#2563eb' }}>Processing records and validating constraints...</p>}
-
-            {/* Summary */}
-            {importSummary && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 16, marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Import Audit Summary</h4>
-                <div style={{ display: 'flex', gap: 16, fontSize: 13, marginBottom: 12 }}>
-                  <div>Total Processed: <strong>{importSummary.total_rows}</strong></div>
-                  <div style={{ color: '#16a34a' }}>Successfully Added: <strong>{importSummary.successfully_imported}</strong></div>
-                  <div style={{ color: '#d97706' }}>Skipped (Duplicates): <strong>{importSummary.skipped_records}</strong></div>
-                  <div style={{ color: '#dc2626' }}>Failed: <strong>{importSummary.failed_records}</strong></div>
-                </div>
-
-                {importSummary.errors.length > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>Error &amp; Skip Diagnostics:</div>
-                    <ul style={{ maxHeight: 160, overflowY: 'auto', paddingLeft: 18, fontSize: 12, color: '#475569', margin: 0 }}>
-                      {importSummary.errors.map((err, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}>
-                          Row {err.row_number} [{err.employee_id || 'N/A'}]: {err.reason}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button
-                onClick={() => setShowImportModal(false)}
-                style={{ background: '#0f172a', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-              >
-                Close
-              </button>
+            <div className="flex flex-col items-center">
+              <FileSpreadsheet className="w-10 h-10 text-indigo-600 mb-2" />
+              <p className="text-sm font-semibold text-slate-800">
+                {importing ? 'Processing CSV Batch...' : 'Click or drag a CSV file here to upload'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">Maximum file size: 10MB</p>
             </div>
           </div>
-        </div>
-      )}
 
-    </div>
+          {/* Import Summary Results */}
+          {importSummary && (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
+              <h4 className="font-bold text-slate-900 text-sm">Import Audit Summary</h4>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="bg-white p-2 rounded-lg border border-slate-200">
+                  <div className="text-xs text-slate-500">Total Rows</div>
+                  <div className="text-base font-bold text-slate-900">{importSummary.total_rows}</div>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-emerald-200 text-emerald-700">
+                  <div className="text-xs">Imported</div>
+                  <div className="text-base font-bold">{importSummary.successfully_imported}</div>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-amber-200 text-amber-700">
+                  <div className="text-xs">Skipped</div>
+                  <div className="text-base font-bold">{importSummary.skipped_records}</div>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-rose-200 text-rose-700">
+                  <div className="text-xs">Failed</div>
+                  <div className="text-base font-bold">{importSummary.failed_records}</div>
+                </div>
+              </div>
+
+              {/* Errors List */}
+              {importSummary.errors.length > 0 && (
+                <div className="mt-3">
+                  <p className="font-semibold text-rose-700 mb-1">Rejected Rows Detail:</p>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-rose-200 bg-rose-50/50 p-2 space-y-1">
+                    {importSummary.errors.map((err, i) => (
+                      <div key={i} className="text-[11px] text-rose-900 flex items-start gap-2">
+                        <span className="font-mono font-bold">Row {err.row_number}:</span>
+                        <span>{err.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setShowImportModal(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </AppLayout>
   )
 }

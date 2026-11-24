@@ -1,6 +1,40 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import AppLayout from '../../components/AppLayout'
+import KPICard from '../../components/KPICard'
+import StatusBadge from '../../components/StatusBadge'
+import Button from '../../components/Button'
+import SearchInput from '../../components/SearchInput'
+import Modal from '../../components/Modal'
+import Drawer from '../../components/Drawer'
+import EmptyState from '../../components/EmptyState'
+import {
+  Megaphone,
+  CheckCircle2,
+  Clock,
+  FileCode,
+  Users,
+  Plus,
+  Search,
+  Filter,
+  Eye,
+  Trash2,
+  Edit,
+  ArrowRight,
+  ArrowLeft,
+  Calendar,
+  Sparkles,
+  Send,
+  AlertCircle,
+  RotateCcw,
+  UserCheck,
+  Check,
+  Building2,
+  Mail,
+  HelpCircle,
+  FileText
+} from 'lucide-react'
 
 interface EmailTemplate {
   id: number
@@ -117,15 +151,15 @@ export default function CampaignsPage() {
   const [wizardDeptFilter, setWizardDeptFilter] = useState<string>('All')
   const [wizardEmpSearch, setWizardEmpSearch] = useState<string>('')
 
-  // Preview State (Wizard Step 4 & Standalone Modal)
+  // Preview State
   const [previewEmpId, setPreviewEmpId] = useState<number | null>(null)
   const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null)
   const [previewLoading, setPreviewLoading] = useState<boolean>(false)
   const [previewMode, setPreviewMode] = useState<'html' | 'text'>('html')
 
-  // Detail / Edit Modal
+  // Detail Drawer State
   const [currentCampaign, setCurrentCampaign] = useState<CampaignDetail | null>(null)
-  const [showDetailModal, setShowDetailModal] = useState<boolean>(false)
+  const [showDetailDrawer, setShowDetailDrawer] = useState<boolean>(false)
   const [isEditing, setIsEditing] = useState<boolean>(false)
   const [editName, setEditName] = useState<string>('')
   const [editDesc, setEditDesc] = useState<string>('')
@@ -142,6 +176,10 @@ export default function CampaignsPage() {
   useEffect(() => {
     loadAllData()
   }, [])
+
+  useEffect(() => {
+    fetchCampaigns()
+  }, [searchTerm, statusFilter, categoryFilter])
 
   async function loadAllData() {
     setLoading(true)
@@ -352,7 +390,7 @@ export default function CampaignsPage() {
         setEditTemplateId(data.template_id || null)
         setEditScheduledAt(data.scheduled_at ? data.scheduled_at.slice(0, 16) : '')
         setIsEditing(false)
-        setShowDetailModal(true)
+        setShowDetailDrawer(true)
       } else {
         showNotification('Failed to fetch campaign details', true)
       }
@@ -405,7 +443,7 @@ export default function CampaignsPage() {
 
       if (res.ok) {
         showNotification(`Campaign "${campName}" deleted successfully.`)
-        if (showDetailModal) setShowDetailModal(false)
+        if (showDetailDrawer) setShowDetailDrawer(false)
         await loadAllData()
       } else {
         const err = await res.json()
@@ -457,6 +495,7 @@ export default function CampaignsPage() {
 
   async function loadStandalonePreview(campId: number, empId: number) {
     setPreviewLoading(true)
+    setStandaloneSelectedEmpId(empId)
     try {
       const res = await fetch(`${API_URL}/api/campaigns/${campId}/preview/${empId}`)
       if (res.ok) {
@@ -464,7 +503,7 @@ export default function CampaignsPage() {
         setPreviewResult(data)
       } else {
         const err = await res.json()
-        showNotification(err.detail || 'Preview generation failed', true)
+        showNotification(err.detail || 'Failed to generate preview', true)
       }
     } catch (e: any) {
       showNotification(e.message, true)
@@ -473,1062 +512,877 @@ export default function CampaignsPage() {
     }
   }
 
-  function getStatusBadgeStyle(st: string) {
-    switch (st) {
-      case 'READY':
-        return { bg: '#ecfdf5', text: '#065f46', border: '#a7f3d0' }
-      case 'DRAFT':
-        return { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' }
-      case 'SCHEDULED':
-        return { bg: '#fffbeb', text: '#92400e', border: '#fde68a' }
-      case 'COMPLETED':
-        return { bg: '#eff6ff', text: '#1e40af', border: '#bfdbfe' }
-      case 'CANCELLED':
-        return { bg: '#fef2f2', text: '#991b1b', border: '#fecaca' }
-      default:
-        return { bg: '#f8fafc', text: '#334155', border: '#e2e8f0' }
-    }
-  }
-
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#0f172a' }}>
-      
-      {/* Top Breadcrumb Navigation */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, borderBottom: '1px solid #e2e8f0', paddingBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
-            <a href="/" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Home</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/employees" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Workforce</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/templates" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Templates</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Campaigns</span>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/analytics" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Analytics</a>
-          </div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>Email Campaign Studio</h1>
-          <p style={{ color: '#64748b', margin: '4px 0 0 0', fontSize: 14 }}>
-            Create multi-recipient notification campaigns, target employee cohorts, and preview personalized emails
-          </p>
-        </div>
-
-        <button
+    <AppLayout
+      title="Email Campaign Studio"
+      subtitle="Design, segment, orchestrate, and schedule personalized multi-recipient email broadcasts"
+      breadcrumbs={[{ label: 'Campaigns' }]}
+      actions={
+        <Button
+          variant="primary"
+          size="sm"
+          icon={Plus}
           onClick={openCreateWizard}
-          style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '10px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
         >
-          <span>+</span> Create New Campaign
-        </button>
-      </header>
-
+          Create Campaign
+        </Button>
+      }
+    >
       {/* Notifications */}
       {successMsg && (
-        <div style={{ padding: '12px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, marginBottom: 20, color: '#166534', fontSize: 13 }}>
-          {successMsg}
+        <div className="flex items-center justify-between p-4 mb-6 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 animate-in fade-in">
+          <div className="flex items-center gap-2.5 font-medium">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMsg('')}
+            className="text-xs font-semibold uppercase opacity-60 hover:opacity-100"
+          >
+            Dismiss
+          </button>
         </div>
       )}
+
       {errorMsg && (
-        <div style={{ padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, marginBottom: 20, color: '#991b1b', fontSize: 13 }}>
-          {errorMsg}
+        <div className="flex items-center justify-between p-4 mb-6 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-800 animate-in fade-in">
+          <div className="flex items-center gap-2.5 font-medium">
+            <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+          <button
+            onClick={() => setErrorMsg('')}
+            className="text-xs font-semibold uppercase opacity-60 hover:opacity-100"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Metric Cards Bar */}
-      {stats && (
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 24 }}>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 18px' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Campaigns</span>
-            <div style={{ fontSize: 26, fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{stats.total_campaigns}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 18px' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#059669', textTransform: 'uppercase' }}>Ready for Dispatch</span>
-            <div style={{ fontSize: 26, fontWeight: 700, color: '#059669', marginTop: 2 }}>{stats.ready_campaigns}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 18px' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase' }}>Draft Campaigns</span>
-            <div style={{ fontSize: 26, fontWeight: 700, color: '#475569', marginTop: 2 }}>{stats.draft_campaigns}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 18px' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#d97706', textTransform: 'uppercase' }}>Scheduled</span>
-            <div style={{ fontSize: 26, fontWeight: 700, color: '#d97706', marginTop: 2 }}>{stats.scheduled_campaigns}</div>
-          </div>
-          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 18px' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase' }}>Targeted Recipients</span>
-            <div style={{ fontSize: 26, fontWeight: 700, color: '#2563eb', marginTop: 2 }}>{stats.total_recipients_targeted}</div>
-          </div>
-        </section>
-      )}
-
-      {/* Filter and Search Bar */}
-      <section style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          type="text"
-          placeholder="Search campaigns by title or description..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') fetchCampaigns() }}
-          style={{ flex: '1 1 240px', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+      {/* 5 KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        <KPICard
+          title="Total Campaigns"
+          value={stats?.total_campaigns ?? 0}
+          icon={Megaphone}
+          accent="indigo"
+          subtitle="All campaign records"
+          loading={loading && !stats}
         />
+        <KPICard
+          title="Ready to Send"
+          value={stats?.ready_campaigns ?? 0}
+          icon={Send}
+          accent="emerald"
+          subtitle="Awaiting schedule trigger"
+          loading={loading && !stats}
+        />
+        <KPICard
+          title="Drafts"
+          value={stats?.draft_campaigns ?? 0}
+          icon={FileText}
+          accent="slate"
+          subtitle="In preparation"
+          loading={loading && !stats}
+        />
+        <KPICard
+          title="Scheduled"
+          value={stats?.scheduled_campaigns ?? 0}
+          icon={Clock}
+          accent="blue"
+          subtitle="Future UTC dispatch"
+          loading={loading && !stats}
+        />
+        <KPICard
+          title="Targeted Recipients"
+          value={stats?.total_recipients_targeted ?? 0}
+          icon={Users}
+          accent="teal"
+          subtitle="Total linked contacts"
+          loading={loading && !stats}
+        />
+      </div>
 
-        {/* Status Dropdown */}
-        <select
-          value={statusFilter}
-          onChange={e => { setStatusFilter(e.target.value); }}
-          style={{ padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-        >
-          {STATUS_LIST.map(st => (
-            <option key={st} value={st}>Status: {st}</option>
-          ))}
-        </select>
+      {/* Filter Toolbar */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs mb-6">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex-1 max-w-md">
+            <SearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search campaigns by name, category, or template..."
+            />
+          </div>
 
-        {/* Category Dropdown */}
-        <select
-          value={categoryFilter}
-          onChange={e => { setCategoryFilter(e.target.value); }}
-          style={{ padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-        >
-          {CATEGORIES.map(cat => (
-            <option key={cat} value={cat}>Category: {cat}</option>
-          ))}
-        </select>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Category Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="text-xs py-2 px-3 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-xs"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <button
-          onClick={fetchCampaigns}
-          style={{ backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >
-          Apply Filters
-        </button>
-      </section>
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 whitespace-nowrap">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="text-xs py-2 px-3 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-xs"
+              >
+                {STATUS_LIST.map((stat) => (
+                  <option key={stat} value={stat}>
+                    {stat}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      {/* Campaign List Table */}
-      <section style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
-          <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            <tr>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Campaign</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Category</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Template</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Recipients</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Status</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Scheduled At</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={7} style={{ padding: '36px', textAlign: 'center', color: '#64748b' }}>
-                  Loading campaigns...
-                </td>
-              </tr>
-            ) : campaigns.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ padding: '48px', textAlign: 'center', color: '#64748b' }}>
-                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>No campaigns found</div>
-                  <div style={{ fontSize: 13 }}>Create your first email campaign to begin targeting recipients.</div>
-                  <button
-                    onClick={openCreateWizard}
-                    style={{ marginTop: 16, backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    + Create Campaign
-                  </button>
-                </td>
-              </tr>
-            ) : (
-              campaigns.map(camp => {
-                const badge = getStatusBadgeStyle(camp.status)
-                return (
-                  <tr key={camp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontWeight: 600, color: '#0f172a' }}>{camp.campaign_name}</div>
-                      {camp.description && (
-                        <div style={{ color: '#64748b', fontSize: 12, marginTop: 2, maxWidth: 280, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {camp.description}
-                        </div>
-                      )}
+            {(searchTerm || categoryFilter !== 'All' || statusFilter !== 'ALL') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={RotateCcw}
+                onClick={() => {
+                  setSearchTerm('')
+                  setCategoryFilter('All')
+                  setStatusFilter('ALL')
+                }}
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Campaign Directory Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        {loading && campaigns.length === 0 ? (
+          <div className="p-12 text-center text-sm text-slate-400">
+            Loading campaign records...
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div className="p-8">
+            <EmptyState
+              title="No campaigns found"
+              description="No campaigns match your filters. Create your first campaign to begin targeting recipients."
+              icon={Megaphone}
+              actionLabel="Create Campaign"
+              onAction={openCreateWizard}
+              actionIcon={Plus}
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[#F8FAFC] text-slate-600 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">ID</th>
+                  <th className="py-3 px-4">Campaign Name</th>
+                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Associated Template</th>
+                  <th className="py-3 px-4">Recipients</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Scheduled / Created</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {campaigns.map((camp) => (
+                  <tr key={camp.id} className="hover:bg-slate-50/70 transition-colors group">
+                    <td className="py-3.5 px-4 font-mono text-xs font-bold text-slate-500">
+                      #{camp.id}
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: 4, fontSize: 12, color: '#475569' }}>
+                    <td className="py-3.5 px-4">
+                      <div className="max-w-xs">
+                        <p className="font-semibold text-slate-900 leading-tight truncate">
+                          {camp.campaign_name}
+                        </p>
+                        {camp.description && (
+                          <p className="text-xs text-slate-400 truncate mt-0.5">
+                            {camp.description}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
                         {camp.category}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#334155' }}>
-                      {camp.template_name ? (
-                        <span style={{ color: '#2563eb', fontWeight: 500 }}>{camp.template_name}</span>
-                      ) : (
-                        <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>None</span>
-                      )}
+                    <td className="py-3.5 px-4 text-xs text-slate-700">
+                      <div className="flex items-center gap-1.5 truncate max-w-[180px]">
+                        <FileCode className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                        <span className="truncate">{camp.template_name || 'No template'}</span>
+                      </div>
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1px solid #e2e8f0', padding: '3px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600, color: '#0f172a' }}>
-                        <span>👥</span> {camp.recipient_count}
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        <Users className="w-3 h-3" />
+                        {camp.recipient_count}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
-                      <span style={{
-                        backgroundColor: badge.bg,
-                        color: badge.text,
-                        border: `1px solid ${badge.border}`,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        textTransform: 'uppercase'
-                      }}>
-                        {camp.status}
-                      </span>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <StatusBadge status={camp.status} size="sm" />
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#64748b', fontSize: 12 }}>
-                      {camp.scheduled_at ? new Date(camp.scheduled_at).toLocaleString() : 'Immediate / Unscheduled'}
+                    <td className="py-3.5 px-4 text-xs text-slate-500 font-mono whitespace-nowrap">
+                      {camp.scheduled_at
+                        ? camp.scheduled_at.replace('T', ' ').slice(0, 16)
+                        : camp.created_at.replace('T', ' ').slice(0, 10)}
                     </td>
-                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: 8 }}>
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => openStandalonePreview(camp.id)}
-                          title="Preview Personalized Email"
-                          style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}
+                          title="Preview Email"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                         >
-                          👁️ Preview
+                          <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => openCampaignDetail(camp.id)}
-                          title="View / Edit Campaign"
-                          style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: '#334155' }}
+                          title="View & Edit Details"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                         >
-                          Manage
+                          <Edit className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDeleteCampaign(camp.id, camp.campaign_name)}
                           title="Delete Campaign"
-                          style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: '#dc2626' }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                         >
-                          Delete
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
                   </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </section>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {/* ----------------- CREATE CAMPAIGN 5-STEP WIZARD MODAL ----------------- */}
-      {showCreateModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
-          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 840, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            
-            {/* Modal Header */}
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Create Email Campaign</h2>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  Step {wizardStep} of 5: {
-                    wizardStep === 1 ? 'Campaign Details' :
-                    wizardStep === 2 ? 'Select Email Template' :
-                    wizardStep === 3 ? 'Target Recipients' :
-                    wizardStep === 4 ? 'Personalized Preview' : 'Review & Confirm'
+        <div className="px-4 py-3 bg-slate-50/50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+          <span>Showing {campaigns.length} campaigns</span>
+          <span>Orchestrator: Unified Campaign Engine</span>
+        </div>
+      </div>
+
+      {/* CREATE CAMPAIGN WIZARD MODAL */}
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Create Email Campaign"
+        subtitle={`Step ${wizardStep} of 4: ${
+          wizardStep === 1
+            ? 'Campaign Information'
+            : wizardStep === 2
+            ? 'Template Selection'
+            : wizardStep === 3
+            ? 'Target Recipients'
+            : 'Scheduling & Preview'
+        }`}
+        maxWidth="3xl"
+      >
+        {/* Stepper Indicator */}
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+          {[
+            { num: 1, label: 'Details' },
+            { num: 2, label: 'Template' },
+            { num: 3, label: 'Recipients' },
+            { num: 4, label: 'Review' },
+          ].map((st) => (
+            <div key={st.num} className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                  wizardStep === st.num
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : wizardStep > st.num
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {wizardStep > st.num ? <Check className="w-3.5 h-3.5" /> : st.num}
+              </div>
+              <span
+                className={`text-xs font-medium ${
+                  wizardStep === st.num ? 'text-slate-900 font-bold' : 'text-slate-500'
+                }`}
+              >
+                {st.label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* STEP 1: Details */}
+        {wizardStep === 1 && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Campaign Name *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Q4 Performance Appraisal Briefing"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="w-full text-sm py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Category *
+              </label>
+              <select
+                value={formCategory}
+                onChange={(e) => setFormCategory(e.target.value)}
+                className="w-full text-sm py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                {CATEGORIES.filter((c) => c !== 'All').map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Description / Purpose
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Optional operational brief or objective..."
+                value={formDesc}
+                onChange={(e) => setFormDesc(e.target.value)}
+                className="w-full text-sm py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                icon={ArrowRight}
+                iconPosition="right"
+                onClick={() => {
+                  if (!formName.trim()) {
+                    showNotification('Please enter a campaign name', true)
+                    return
                   }
-                </div>
-              </div>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+                  setWizardStep(2)
+                }}
               >
-                &times;
-              </button>
+                Next: Select Template
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2: Template Selection */}
+        {wizardStep === 2 && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Choose Email Template *
+              </label>
+              <select
+                value={formTemplateId || ''}
+                onChange={(e) => setFormTemplateId(Number(e.target.value))}
+                className="w-full text-sm py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              >
+                {templates.map((tmpl) => (
+                  <option key={tmpl.id} value={tmpl.id}>
+                    [{tmpl.category}] {tmpl.template_name}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Stepper Progress Bar */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-              {[
-                { step: 1, label: '1. Setup' },
-                { step: 2, label: '2. Template' },
-                { step: 3, label: '3. Recipients' },
-                { step: 4, label: '4. Preview' },
-                { step: 5, label: '5. Review' }
-              ].map(s => (
-                <div
-                  key={s.step}
-                  onClick={() => { if (s.step < wizardStep || (s.step === 2 && formName.trim())) setWizardStep(s.step) }}
-                  style={{
-                    padding: '10px 8px',
-                    textAlign: 'center',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    color: wizardStep === s.step ? '#2563eb' : (wizardStep > s.step ? '#059669' : '#94a3b8'),
-                    borderBottom: wizardStep === s.step ? '2px solid #2563eb' : 'none',
-                    background: wizardStep === s.step ? '#fff' : 'transparent'
-                  }}
-                >
-                  {s.label} {wizardStep > s.step && '✓'}
-                </div>
-              ))}
-            </div>
-
-            {/* Modal Body */}
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-              
-              {/* STEP 1: Basic Campaign Details */}
-              {wizardStep === 1 && (
-                <div>
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                      Campaign Title <span style={{ color: '#dc2626' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Q4 Company-wide Security Awareness Training"
-                      value={formName}
-                      onChange={e => setFormName(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                      Description (Optional)
-                    </label>
-                    <textarea
-                      rows={2}
-                      placeholder="Operational purpose of this email campaign..."
-                      value={formDesc}
-                      onChange={e => setFormDesc(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            {/* Template Preview Snippet */}
+            {formTemplateId && (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                {(() => {
+                  const selectedTmpl = templates.find((t) => t.id === formTemplateId)
+                  if (!selectedTmpl) return null
+                  return (
                     <div>
-                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                        Category
-                      </label>
-                      <select
-                        value={formCategory}
-                        onChange={e => setFormCategory(e.target.value)}
-                        style={{ width: '100%', padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-                      >
-                        {CATEGORIES.filter(c => c !== 'All').map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
+                      <p className="font-semibold text-slate-900 mb-1">
+                        Subject: <span className="font-normal">{selectedTmpl.subject}</span>
+                      </p>
+                      <p className="font-semibold text-slate-900 mb-2">
+                        Category: <span className="font-normal">{selectedTmpl.category}</span>
+                      </p>
+                      <div className="border border-slate-200 rounded-lg bg-white p-3 font-mono text-[11px] text-slate-600 max-h-36 overflow-y-auto whitespace-pre-wrap">
+                        {selectedTmpl.body}
+                      </div>
                     </div>
+                  )
+                })()}
+              </div>
+            )}
 
-                    <div>
-                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                        Scheduled Launch Time (Optional)
-                      </label>
+            <div className="flex justify-between pt-4 border-t border-slate-100">
+              <Button variant="secondary" icon={ArrowLeft} onClick={() => setWizardStep(1)}>
+                Back
+              </Button>
+              <Button
+                variant="primary"
+                icon={ArrowRight}
+                iconPosition="right"
+                onClick={() => setWizardStep(3)}
+              >
+                Next: Target Recipients
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: Recipient Targeting */}
+        {wizardStep === 3 && (
+          <div className="space-y-4">
+            {/* Quick Actions & Filters */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={handleSelectAllActive}>
+                  Select All Active ({employees.filter((e) => e.employment_status === 'Active').length})
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handleSelectFiltered}>
+                  Select Filtered
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleDeselectAll}>
+                  Clear
+                </Button>
+              </div>
+
+              <div className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200">
+                Selected: {selectedEmpIds.length} recipients
+              </div>
+            </div>
+
+            {/* Department Filter & Search */}
+            <div className="grid grid-cols-2 gap-3">
+              <SearchInput
+                value={wizardEmpSearch}
+                onChange={setWizardEmpSearch}
+                placeholder="Search employees..."
+              />
+              <select
+                value={wizardDeptFilter}
+                onChange={(e) => setWizardDeptFilter(e.target.value)}
+                className="text-xs py-2 px-3 bg-white border border-slate-200 rounded-lg text-slate-800"
+              >
+                <option value="All">All Departments</option>
+                {departmentsList.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Employee Checkbox List */}
+            <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+              {getFilteredEmployees().map((emp) => {
+                const isSelected = selectedEmpIds.includes(emp.id)
+                return (
+                  <label
+                    key={emp.id}
+                    className={`flex items-center justify-between p-3 cursor-pointer text-xs transition-colors hover:bg-slate-50 ${
+                      isSelected ? 'bg-indigo-50/40' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
                       <input
-                        type="datetime-local"
-                        value={formScheduledAt}
-                        onChange={e => setFormScheduledAt(e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleEmployeeSelection(emp.id)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
                       />
+                      <div>
+                        <span className="font-semibold text-slate-900">{emp.full_name}</span>
+                        <span className="text-slate-400 ml-1.5 font-mono">{emp.email}</span>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 2: Template Selection */}
-              {wizardStep === 2 && (
-                <div>
-                  <p style={{ margin: '0 0 16px 0', fontSize: 13, color: '#64748b' }}>
-                    Select an email template from your centralized template library to power this campaign.
-                  </p>
-
-                  {templates.length === 0 ? (
-                    <div style={{ padding: 24, textAlign: 'center', background: '#f8fafc', borderRadius: 6 }}>
-                      <p style={{ margin: 0, color: '#64748b' }}>No templates available. Please create a template in the Template Studio first.</p>
-                      <a href="/templates" style={{ display: 'inline-block', marginTop: 10, color: '#2563eb', fontWeight: 600 }}>Go to Template Studio &rarr;</a>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 12, maxHeight: 380, overflowY: 'auto' }}>
-                      {templates.map(tmpl => {
-                        const isSelected = formTemplateId === tmpl.id
-                        return (
-                          <div
-                            key={tmpl.id}
-                            onClick={() => setFormTemplateId(tmpl.id)}
-                            style={{
-                              padding: '14px 18px',
-                              border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                              background: isSelected ? '#eff6ff' : '#fff',
-                              borderRadius: 8,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center'
-                            }}
-                          >
-                            <div>
-                              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                                <span style={{ fontWeight: 600, fontSize: 14, color: isSelected ? '#1e40af' : '#0f172a' }}>
-                                  {tmpl.template_name}
-                                </span>
-                                <span style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: 4, fontSize: 11, color: '#475569' }}>
-                                  {tmpl.category}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                                Subject: <span style={{ fontFamily: 'monospace' }}>{tmpl.subject}</span>
-                              </div>
-                            </div>
-                            <input
-                              type="radio"
-                              name="selected_template"
-                              checked={isSelected}
-                              onChange={() => setFormTemplateId(tmpl.id)}
-                              style={{ width: 18, height: 18, cursor: 'pointer' }}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* STEP 3: Recipient Targeting */}
-              {wizardStep === 3 && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>Target Employee Recipients</span>
-                      <span style={{ marginLeft: 8, background: '#eff6ff', color: '#1e40af', padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 700 }}>
-                        {selectedEmpIds.length} Selected
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 border border-slate-200">
+                        {emp.department}
                       </span>
+                      <StatusBadge status={emp.employment_status} size="sm" />
                     </div>
-
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={handleSelectAllActive}
-                        style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4, padding: '4px 10px', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
-                      >
-                        Select All Active ({employees.filter(e => e.employment_status === 'Active').length})
-                      </button>
-                      <button
-                        onClick={handleSelectFiltered}
-                        style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 4, padding: '4px 10px', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}
-                      >
-                        Select Filtered
-                      </button>
-                      <button
-                        onClick={handleDeselectAll}
-                        style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 4, padding: '4px 10px', fontSize: 12, color: '#dc2626', cursor: 'pointer' }}
-                      >
-                        Deselect All
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Recipient Filter Controls */}
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                    <input
-                      type="text"
-                      placeholder="Search employees by name, email, or designation..."
-                      value={wizardEmpSearch}
-                      onChange={e => setWizardEmpSearch(e.target.value)}
-                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12 }}
-                    />
-                    <select
-                      value={wizardDeptFilter}
-                      onChange={e => setWizardDeptFilter(e.target.value)}
-                      style={{ padding: '7px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, background: '#fff' }}
-                    >
-                      <option value="All">All Departments</option>
-                      {departmentsList.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Employee Table */}
-                  <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead style={{ background: '#f8fafc', position: 'sticky', top: 0, borderBottom: '1px solid #e2e8f0' }}>
-                        <tr>
-                          <th style={{ padding: '8px 12px', width: 30 }}></th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Name</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Email</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Department</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {getFilteredEmployees().map(emp => {
-                          const isChecked = selectedEmpIds.includes(emp.id)
-                          return (
-                            <tr
-                              key={emp.id}
-                              onClick={() => toggleEmployeeSelection(emp.id)}
-                              style={{
-                                borderBottom: '1px solid #f1f5f9',
-                                background: isChecked ? '#f0fdf4' : '#fff',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => {}}
-                                  style={{ cursor: 'pointer' }}
-                                />
-                              </td>
-                              <td style={{ padding: '8px 12px', fontWeight: 600 }}>{emp.full_name}</td>
-                              <td style={{ padding: '8px 12px', color: '#64748b' }}>{emp.email}</td>
-                              <td style={{ padding: '8px 12px' }}>{emp.department}</td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <span style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  padding: '2px 6px',
-                                  borderRadius: 8,
-                                  background: emp.employment_status === 'Active' ? '#dcfce7' : '#fee2e2',
-                                  color: emp.employment_status === 'Active' ? '#166534' : '#991b1b'
-                                }}>
-                                  {emp.employment_status}
-                                </span>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 4: Personalized Preview */}
-              {wizardStep === 4 && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                    <div>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>Select Recipient to Preview: </span>
-                      <select
-                        value={previewEmpId || ''}
-                        onChange={e => {
-                          const id = Number(e.target.value)
-                          triggerWizardPreview(id)
-                        }}
-                        style={{ marginLeft: 8, padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, background: '#fff' }}
-                      >
-                        {selectedEmpIds.length === 0 ? (
-                          <option value="">No recipients selected</option>
-                        ) : (
-                          employees
-                            .filter(e => selectedEmpIds.includes(e.id))
-                            .map(e => (
-                              <option key={e.id} value={e.id}>{e.full_name} ({e.email}) - {e.department}</option>
-                            ))
-                        )}
-                      </select>
-                    </div>
-
-                    <div style={{ display: 'inline-flex', background: '#f1f5f9', borderRadius: 6, padding: 2 }}>
-                      <button
-                        onClick={() => setPreviewMode('html')}
-                        style={{
-                          background: previewMode === 'html' ? '#fff' : 'transparent',
-                          border: 'none',
-                          borderRadius: 4,
-                          padding: '4px 10px',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Rendered HTML
-                      </button>
-                      <button
-                        onClick={() => setPreviewMode('text')}
-                        style={{
-                          background: previewMode === 'text' ? '#fff' : 'transparent',
-                          border: 'none',
-                          borderRadius: 4,
-                          padding: '4px 10px',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Plain Text Fallback
-                      </button>
-                    </div>
-                  </div>
-
-                  {previewLoading ? (
-                    <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Rendering personalized email preview...</div>
-                  ) : previewResult ? (
-                    <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-                      <div style={{ padding: '10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 13 }}>
-                        <span style={{ fontWeight: 600, color: '#475569' }}>Subject: </span>
-                        <span style={{ fontWeight: 700, color: '#0f172a' }}>{previewResult.rendered_subject}</span>
-                      </div>
-                      
-                      {previewMode === 'html' ? (
-                        <iframe
-                          title="Recipient Email Preview"
-                          sandbox=""
-                          srcDoc={previewResult.rendered_html}
-                          style={{ width: '100%', minHeight: 240, border: 'none', background: '#fff' }}
-                        />
-                      ) : (
-                        <pre style={{ padding: 18, background: '#fafafa', margin: 0, minHeight: 180, fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
-                          {previewResult.plain_text_fallback}
-                        </pre>
-                      )}
-
-                      <div style={{ padding: '8px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#64748b', display: 'flex', gap: 14 }}>
-                        <span>Variables Resolved: <strong>{previewResult.variables_used.join(', ') || 'None'}</strong></span>
-                        {previewResult.missing_variables.length > 0 && (
-                          <span style={{ color: '#dc2626' }}>Missing: <strong>{previewResult.missing_variables.join(', ')}</strong></span>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-                      Please select a recipient above to render the email preview.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* STEP 5: Review & Save */}
-              {wizardStep === 5 && (
-                <div>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 14px 0' }}>Campaign Summary</h3>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-                    <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Campaign Name</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginTop: 2 }}>{formName}</div>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', marginTop: 12 }}>Category</div>
-                      <div style={{ fontSize: 13, color: '#334155', marginTop: 2 }}>{formCategory}</div>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', marginTop: 12 }}>Scheduled Launch</div>
-                      <div style={{ fontSize: 13, color: '#334155', marginTop: 2 }}>
-                        {formScheduledAt ? new Date(formScheduledAt).toLocaleString() : 'Immediate / Unscheduled'}
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Selected Template</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#2563eb', marginTop: 2 }}>
-                        {templates.find(t => t.id === formTemplateId)?.template_name || 'None'}
-                      </div>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', marginTop: 12 }}>Total Targeted Recipients</div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: '#059669', marginTop: 2 }}>
-                        {selectedEmpIds.length} Employees
-                      </div>
-                    </div>
-                  </div>
-
-                  <p style={{ fontSize: 13, color: '#64748b' }}>
-                    You can save this campaign as a <strong>DRAFT</strong> for future editing, or mark it as <strong>READY</strong> for scheduled automated delivery.
-                  </p>
-                </div>
-              )}
-
+                  </label>
+                )
+              })}
             </div>
 
-            {/* Modal Footer Controls */}
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                {wizardStep > 1 && (
-                  <button
-                    onClick={() => setWizardStep(prev => prev - 1)}
-                    style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    &larr; Back
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: 10 }}>
-                {wizardStep < 5 ? (
-                  <button
-                    onClick={() => {
-                      if (wizardStep === 1 && !formName.trim()) {
-                        showNotification('Campaign title is required', true)
-                        return
-                      }
-                      if (wizardStep === 3 && selectedEmpIds.length > 0 && !previewEmpId) {
-                        triggerWizardPreview(selectedEmpIds[0])
-                      }
-                      setWizardStep(prev => prev + 1)
-                    }}
-                    style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    Next Step &rarr;
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleSaveCampaign('DRAFT')}
-                      style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      Save as Draft
-                    </button>
-                    <button
-                      onClick={() => handleSaveCampaign('READY')}
-                      style={{ backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 20px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      ✓ Mark as Ready
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ----------------- CAMPAIGN MANAGE / DETAIL MODAL ----------------- */}
-      {showDetailModal && currentCampaign && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
-          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
-                  {isEditing ? 'Edit Campaign' : currentCampaign.campaign_name}
-                </h2>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  Status: <strong>{currentCampaign.status}</strong> | Recipients: <strong>{currentCampaign.recipients.length}</strong>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowDetailModal(false)}
-                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
+            <div className="flex justify-between pt-4 border-t border-slate-100">
+              <Button variant="secondary" icon={ArrowLeft} onClick={() => setWizardStep(2)}>
+                Back
+              </Button>
+              <Button
+                variant="primary"
+                icon={ArrowRight}
+                iconPosition="right"
+                onClick={() => {
+                  if (selectedEmpIds.length === 0) {
+                    showNotification('Please select at least one recipient', true)
+                    return
+                  }
+                  setWizardStep(4)
+                  if (selectedEmpIds.length > 0) {
+                    triggerWizardPreview(selectedEmpIds[0])
+                  }
+                }}
               >
-                &times;
-              </button>
+                Next: Review & Schedule
+              </Button>
             </div>
+          </div>
+        )}
 
-            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-              {isEditing ? (
-                <div>
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Campaign Name</label>
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={e => setEditName(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                    />
-                  </div>
-
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Description</label>
-                    <textarea
-                      rows={2}
-                      value={editDesc}
-                      onChange={e => setEditDesc(e.target.value)}
-                      style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Status</label>
-                      <select
-                        value={editStatus}
-                        onChange={e => setEditStatus(e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-                      >
-                        {STATUS_LIST.filter(s => s !== 'ALL').map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Category</label>
-                      <select
-                        value={editCategory}
-                        onChange={e => setEditCategory(e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-                      >
-                        {CATEGORIES.filter(c => c !== 'All').map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Template</label>
-                      <select
-                        value={editTemplateId || ''}
-                        onChange={e => setEditTemplateId(e.target.value ? Number(e.target.value) : null)}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-                      >
-                        <option value="">None</option>
-                        {templates.map(t => (
-                          <option key={t.id} value={t.id}>{t.template_name} ({t.category})</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Scheduled At</label>
-                      <input
-                        type="datetime-local"
-                        value={editScheduledAt}
-                        onChange={e => setEditScheduledAt(e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  {currentCampaign.description && (
-                    <div style={{ fontSize: 13, color: '#475569', marginBottom: 16 }}>
-                      {currentCampaign.description}
-                    </div>
-                  )}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-                    <div style={{ background: '#f8fafc', padding: 12, borderRadius: 6 }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>Category:</span>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{currentCampaign.category}</div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: 12, borderRadius: 6 }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>Template:</span>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: '#2563eb' }}>
-                        {currentCampaign.template ? currentCampaign.template.template_name : 'None'}
-                      </div>
-                    </div>
-                    <div style={{ background: '#f8fafc', padding: 12, borderRadius: 6 }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>Scheduled Launch:</span>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>
-                        {currentCampaign.scheduled_at ? new Date(currentCampaign.scheduled_at).toLocaleString() : 'Unscheduled'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Recipients List */}
-                  <h4 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 10px 0', color: '#0f172a' }}>
-                    Targeted Recipients ({currentCampaign.recipients.length})
-                  </h4>
-
-                  <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <tr>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Name</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Email</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', color: '#475569' }}>Department</th>
-                          <th style={{ padding: '8px 12px', textAlign: 'right', color: '#475569' }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {currentCampaign.recipients.map(r => (
-                          <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px 12px', fontWeight: 600 }}>{r.employee_name || 'N/A'}</td>
-                            <td style={{ padding: '8px 12px', color: '#64748b' }}>{r.recipient_email}</td>
-                            <td style={{ padding: '8px 12px' }}>{r.department || 'N/A'}</td>
-                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                              <button
-                                onClick={() => handleRemoveRecipient(currentCampaign.id, r.employee_id)}
-                                style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between' }}>
+        {/* STEP 4: Review & Schedule */}
+        {wizardStep === 4 && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <button
-                  onClick={() => handleDeleteCampaign(currentCampaign.id, currentCampaign.campaign_name)}
-                  style={{ background: '#fff', border: '1px solid #fecaca', borderRadius: 6, padding: '8px 14px', fontSize: 12, color: '#dc2626', cursor: 'pointer' }}
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Schedule Execution (Optional)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={formScheduledAt}
+                  onChange={(e) => setFormScheduledAt(e.target.value)}
+                  className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Leave blank for immediate trigger when marked ready.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Preview Recipient
+                </label>
+                <select
+                  value={previewEmpId || ''}
+                  onChange={(e) => triggerWizardPreview(Number(e.target.value))}
+                  className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 >
-                  Delete Campaign
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10 }}>
-                {isEditing ? (
-                  <>
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleUpdateCampaign}
-                      style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      Save Changes
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => {
-                        setShowDetailModal(false)
-                        openStandalonePreview(currentCampaign.id)
-                      }}
-                      style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 6, padding: '8px 14px', fontSize: 12, color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      👁️ Preview Output
-                    </button>
-                    <button
-                      onClick={() => setIsEditing(true)}
-                      style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      Edit Campaign
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ----------------- STANDALONE PERSONALIZED PREVIEW MODAL ----------------- */}
-      {standalonePreviewModal && standaloneCampaign && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
-          <div style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 780, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
-                  Personalized Email Preview
-                </h2>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  Campaign: <strong>{standaloneCampaign.campaign_name}</strong> | Template: <strong>{standaloneCampaign.template?.template_name || 'N/A'}</strong>
-                </div>
-              </div>
-              <button
-                onClick={() => setStandalonePreviewModal(false)}
-                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}
-              >
-                &times;
-              </button>
-            </div>
-
-            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <div>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Recipient: </span>
-                  <select
-                    value={standaloneSelectedEmpId || ''}
-                    onChange={e => {
-                      const id = Number(e.target.value)
-                      setStandaloneSelectedEmpId(id)
-                      loadStandalonePreview(standaloneCampaign.id, id)
-                    }}
-                    style={{ marginLeft: 8, padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, background: '#fff' }}
-                  >
-                    {standaloneCampaign.recipients.map(r => (
-                      <option key={r.employee_id} value={r.employee_id}>
-                        {r.employee_name || 'Employee'} ({r.recipient_email}) - {r.department || 'N/A'}
+                  {selectedEmpIds.map((id) => {
+                    const emp = employees.find((e) => e.id === id)
+                    return (
+                      <option key={id} value={id}>
+                        {emp?.full_name} ({emp?.email})
                       </option>
-                    ))}
-                  </select>
-                </div>
+                    )
+                  })}
+                </select>
+              </div>
+            </div>
 
-                <div style={{ display: 'inline-flex', background: '#f1f5f9', borderRadius: 6, padding: 2 }}>
+            {/* Sandboxed HTML Email Preview */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs">
+                <span className="font-semibold text-slate-700">
+                  Subject:{' '}
+                  <span className="text-slate-900 font-bold">
+                    {previewResult?.rendered_subject || 'Loading subject...'}
+                  </span>
+                </span>
+                <div className="flex gap-1">
                   <button
                     onClick={() => setPreviewMode('html')}
-                    style={{
-                      background: previewMode === 'html' ? '#fff' : 'transparent',
-                      border: 'none',
-                      borderRadius: 4,
-                      padding: '4px 10px',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                      previewMode === 'html'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
                   >
                     HTML
                   </button>
                   <button
                     onClick={() => setPreviewMode('text')}
-                    style={{
-                      background: previewMode === 'text' ? '#fff' : 'transparent',
-                      border: 'none',
-                      borderRadius: 4,
-                      padding: '4px 10px',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                      previewMode === 'text'
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-600 hover:bg-slate-200'
+                    }`}
                   >
-                    Plain Text
+                    Text
                   </button>
                 </div>
               </div>
 
               {previewLoading ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Rendering personalized template...</div>
+                <div className="p-8 text-center text-xs text-slate-400">
+                  Rendering sandboxed email preview...
+                </div>
               ) : previewResult ? (
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-                  <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 13 }}>
-                    <span style={{ fontWeight: 600, color: '#475569' }}>Subject: </span>
-                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{previewResult.rendered_subject}</span>
-                  </div>
-
-                  {previewMode === 'html' ? (
-                    <iframe
-                      title="Recipient Email Preview"
-                      sandbox=""
-                      srcDoc={previewResult.rendered_html}
-                      style={{ width: '100%', minHeight: 240, border: 'none', background: '#fff' }}
-                    />
-                  ) : (
-                    <pre style={{ padding: 20, background: '#fafafa', margin: 0, minHeight: 180, fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
-                      {previewResult.plain_text_fallback}
-                    </pre>
-                  )}
-
-                  <div style={{ padding: '10px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', fontSize: 11, color: '#64748b', display: 'flex', gap: 14 }}>
-                    <span>Resolved Tags: <strong>{previewResult.variables_used.join(', ') || 'None'}</strong></span>
-                    {previewResult.missing_variables.length > 0 && (
-                      <span style={{ color: '#dc2626' }}>Missing: <strong>{previewResult.missing_variables.join(', ')}</strong></span>
-                    )}
-                  </div>
-                </div>
+                previewMode === 'html' ? (
+                  <iframe
+                    title="Recipient Email Preview"
+                    sandbox=""
+                    srcDoc={previewResult.rendered_html}
+                    className="w-full min-h-[220px] border-none bg-white"
+                  />
+                ) : (
+                  <pre className="p-4 bg-slate-50 text-xs font-mono whitespace-pre-wrap text-slate-700 max-h-56 overflow-y-auto">
+                    {previewResult.plain_text_fallback}
+                  </pre>
+                )
               ) : (
-                <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-                  No preview generated for this recipient.
-                </div>
+                <div className="p-8 text-center text-xs text-slate-400">No preview generated</div>
               )}
             </div>
 
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #e2e8f0', textAlign: 'right' }}>
-              <button
-                onClick={() => setStandalonePreviewModal(false)}
-                style={{ backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-              >
-                Close Preview
-              </button>
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <Button variant="secondary" icon={ArrowLeft} onClick={() => setWizardStep(3)}>
+                Back
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => handleSaveCampaign('DRAFT')}>
+                  Save as Draft
+                </Button>
+                <Button variant="primary" icon={Check} onClick={() => handleSaveCampaign('READY')}>
+                  Mark Ready to Send
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* CAMPAIGN DETAIL & EDIT DRAWER */}
+      <Drawer
+        isOpen={showDetailDrawer}
+        onClose={() => setShowDetailDrawer(false)}
+        title={currentCampaign?.campaign_name || 'Campaign Details'}
+        subtitle={`ID #${currentCampaign?.id} • Category: ${currentCampaign?.category}`}
+        size="xl"
+      >
+        {currentCampaign && (
+          <div className="space-y-6">
+            {/* Top Overview Cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="text-[11px] text-slate-500 font-semibold uppercase">Status</div>
+                <div className="mt-1">
+                  <StatusBadge status={currentCampaign.status} />
+                </div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="text-[11px] text-slate-500 font-semibold uppercase">Recipients</div>
+                <div className="mt-1 text-base font-bold text-slate-900">
+                  {currentCampaign.recipients.length} targeted
+                </div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="text-[11px] text-slate-500 font-semibold uppercase">Template</div>
+                <div className="mt-1 text-xs font-medium text-slate-800 truncate" title={currentCampaign.template?.template_name}>
+                  {currentCampaign.template?.template_name || 'None'}
+                </div>
+              </div>
             </div>
 
+            {/* Edit / View Mode */}
+            {isEditing ? (
+              <div className="space-y-4 p-4 rounded-xl border border-indigo-200 bg-indigo-50/30">
+                <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wider">
+                  Edit Campaign Settings
+                </h4>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full text-xs py-2 px-3 border border-slate-200 rounded-lg bg-white"
+                  >
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="READY">READY</option>
+                    <option value="SCHEDULED">SCHEDULED</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setIsEditing(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={handleUpdateCampaign}>
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-end">
+                <Button variant="secondary" size="sm" icon={Edit} onClick={() => setIsEditing(true)}>
+                  Edit Campaign Settings
+                </Button>
+              </div>
+            )}
+
+            {/* Targeted Recipients Table */}
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-600" />
+                Targeted Recipients ({currentCampaign.recipients.length})
+              </h4>
+              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 sticky top-0">
+                    <tr>
+                      <th className="py-2.5 px-3">Recipient</th>
+                      <th className="py-2.5 px-3">Department</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {currentCampaign.recipients.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-50">
+                        <td className="py-2.5 px-3 font-medium text-slate-900">
+                          {r.employee_name || r.recipient_email}
+                          <div className="text-[10px] text-slate-400 font-mono">{r.recipient_email}</div>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600">{r.department || 'General'}</td>
+                        <td className="py-2.5 px-3">
+                          <StatusBadge status={r.status} size="sm" />
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <button
+                            onClick={() => handleRemoveRecipient(currentCampaign.id, r.employee_id)}
+                            className="text-rose-600 hover:text-rose-800 text-[11px] font-semibold"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* STANDALONE EMAIL PREVIEW MODAL */}
+      <Modal
+        isOpen={standalonePreviewModal}
+        onClose={() => setStandalonePreviewModal(false)}
+        title="Personalized Email Preview"
+        subtitle={`Campaign: ${standaloneCampaign?.campaign_name || ''}`}
+        maxWidth="3xl"
+      >
+        <div className="space-y-4">
+          {standaloneCampaign && standaloneCampaign.recipients.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                Recipient Context:
+              </span>
+              <select
+                value={standaloneSelectedEmpId || ''}
+                onChange={(e) =>
+                  loadStandalonePreview(standaloneCampaign.id, Number(e.target.value))
+                }
+                className="text-xs py-2 px-3 border border-slate-200 rounded-lg flex-1 bg-white focus:ring-2 focus:ring-indigo-500"
+              >
+                {standaloneCampaign.recipients.map((r) => (
+                  <option key={r.employee_id} value={r.employee_id}>
+                    {r.employee_name || r.recipient_email} ({r.recipient_email})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs">
+              <span className="font-semibold text-slate-700">
+                Subject:{' '}
+                <span className="text-slate-900 font-bold">
+                  {previewResult?.rendered_subject || 'Loading subject...'}
+                </span>
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPreviewMode('html')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                    previewMode === 'html'
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  HTML
+                </button>
+                <button
+                  onClick={() => setPreviewMode('text')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                    previewMode === 'text'
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Text
+                </button>
+              </div>
+            </div>
+
+            {previewLoading ? (
+              <div className="p-12 text-center text-xs text-slate-400">
+                Rendering sandboxed email preview...
+              </div>
+            ) : previewResult ? (
+              previewMode === 'html' ? (
+                <iframe
+                  title="Recipient Email Preview"
+                  sandbox=""
+                  srcDoc={previewResult.rendered_html}
+                  className="w-full min-h-[260px] border-none bg-white"
+                />
+              ) : (
+                <pre className="p-4 bg-slate-50 text-xs font-mono whitespace-pre-wrap text-slate-700 max-h-60 overflow-y-auto">
+                  {previewResult.plain_text_fallback}
+                </pre>
+              )
+            ) : (
+              <div className="p-8 text-center text-xs text-slate-400">
+                No recipients to preview
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-3 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setStandalonePreviewModal(false)}>
+              Close
+            </Button>
           </div>
         </div>
-      )}
-
-    </div>
+      </Modal>
+    </AppLayout>
   )
 }

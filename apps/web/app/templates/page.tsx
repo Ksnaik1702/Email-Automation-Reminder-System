@@ -1,6 +1,29 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import AppLayout from '@/components/AppLayout'
+import KPICard from '@/components/KPICard'
+import Button from '@/components/Button'
+import SearchInput from '@/components/SearchInput'
+import Modal from '@/components/Modal'
+import EmptyState from '@/components/EmptyState'
+import {
+  FileText,
+  Plus,
+  Eye,
+  Copy,
+  Trash2,
+  Edit,
+  Code,
+  Tag,
+  CheckCircle2,
+  AlertTriangle,
+  Layers,
+  Sparkles,
+  RefreshCw,
+  ExternalLink,
+  Variable
+} from 'lucide-react'
 
 interface EmailTemplate {
   id: number
@@ -46,10 +69,10 @@ const CATEGORIES = [
 
 const VARIABLE_PANEL = [
   {
-    group: "Employee Variables",
+    group: "Employee Attributes",
     vars: [
       { tag: "{{ name }}", label: "Full Name" },
-      { tag: "{{ email }}", label: "Email" },
+      { tag: "{{ email }}", label: "Email Address" },
       { tag: "{{ employee_id }}", label: "Employee Code" },
       { tag: "{{ department }}", label: "Department" },
       { tag: "{{ designation }}", label: "Job Title" },
@@ -57,22 +80,22 @@ const VARIABLE_PANEL = [
     ]
   },
   {
-    group: "Event Variables",
+    group: "Event & Task Details",
     vars: [
       { tag: "{{ event_name }}", label: "Event Title" },
       { tag: "{{ event_date }}", label: "Date" },
       { tag: "{{ event_time }}", label: "Time" },
-      { tag: "{{ event_location }}", label: "Venue/Room" },
+      { tag: "{{ event_location }}", label: "Location / Room" },
       { tag: "{{ meeting_link }}", label: "Meeting URL" },
       { tag: "{{ event_description }}", label: "Description" }
     ]
   },
   {
-    group: "Sender Variables",
+    group: "Sender Context",
     vars: [
       { tag: "{{ sender_name }}", label: "Sender Name" },
       { tag: "{{ sender_department }}", label: "Sender Dept" },
-      { tag: "{{ company_name }}", label: "Org Name" }
+      { tag: "{{ company_name }}", label: "Company Name" }
     ]
   }
 ]
@@ -90,10 +113,12 @@ export default function TemplateManagementPage() {
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
 
+  // Selected Active Template for Studio Preview
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
+
   // Modals
   const [showEditorModal, setShowEditorModal] = useState<boolean>(false)
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false)
-  const [showPreviewModal, setShowPreviewModal] = useState<boolean>(false)
 
   // Current Working Item
   const [currentTemplate, setCurrentTemplate] = useState<EmailTemplate | null>(null)
@@ -127,7 +152,11 @@ export default function TemplateManagementPage() {
       const res = await fetch(`${API_URL}/api/templates?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
-        setTemplates(data.items || [])
+        const items = data.items || []
+        setTemplates(items)
+        if (items.length > 0 && selectedTemplateId === null) {
+          setSelectedTemplateId(items[0].id)
+        }
       } else {
         const err = await res.json()
         setErrorMsg(err.detail || 'Failed to fetch templates')
@@ -144,124 +173,34 @@ export default function TemplateManagementPage() {
       const res = await fetch(`${API_URL}/api/employees?page_size=100`)
       if (res.ok) {
         const data = await res.json()
-        setEmployees(data.items || [])
-        if (data.items && data.items.length > 0 && !previewEmployeeId) {
-          setPreviewEmployeeId(data.items[0].id)
+        const emps = data.items || []
+        setEmployees(emps)
+        if (emps.length > 0 && !previewEmployeeId) {
+          setPreviewEmployeeId(emps[0].id)
         }
       }
     } catch (e) {
-      console.warn('Failed to load employee list for preview context:', e)
+      console.warn('Failed to load employee list:', e)
     }
   }
 
-  function openCreateModal() {
-    setCurrentTemplate(null)
-    setFormName('')
-    setFormCategory('General Announcement')
-    setFormSubject('Reminder: {{ event_name }}')
-    setFormBody(
-      '<div style="font-family: sans-serif; line-height: 1.6; color: #1e293b;">\n' +
-      '  <h2 style="color: #0f172a;">Hello {{ name }},</h2>\n' +
-      '  <p>This is a notification regarding <strong>{{ event_name }}</strong> scheduled for <strong>{{ event_date }}</strong> at <strong>{{ event_time }}</strong>.</p>\n' +
-      '  <p>Location: {{ event_location }}</p>\n' +
-      '  <div style="margin: 20px 0;">\n' +
-      '    <a href="{{ meeting_link }}" style="background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 4px; text-decoration: none; font-weight: 600;">Join Meeting</a>\n' +
-      '  </div>\n' +
-      '  <p>Best regards,<br>{{ sender_name }}<br>{{ sender_department }} &bull; {{ company_name }}</p>\n' +
-      '</div>'
-    )
-    setShowEditorModal(true)
-  }
-
-  function openEditModal(tmpl: EmailTemplate) {
-    setCurrentTemplate(tmpl)
-    setFormName(tmpl.template_name)
-    setFormCategory(tmpl.category)
-    setFormSubject(tmpl.subject)
-    setFormBody(tmpl.body)
-    setShowEditorModal(true)
-  }
-
-  function openDeleteModal(tmpl: EmailTemplate) {
-    setCurrentTemplate(tmpl)
-    setShowDeleteModal(true)
-  }
-
-  async function handleSaveTemplate(e: React.FormEvent) {
-    e.preventDefault()
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    const payload = {
-      template_name: formName.trim(),
-      category: formCategory,
-      subject: formSubject.trim(),
-      body: formBody.trim()
-    }
-
-    try {
-      const url = currentTemplate ? `${API_URL}/api/templates/${currentTemplate.id}` : `${API_URL}/api/templates`
-      const method = currentTemplate ? 'PUT' : 'POST'
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-
-      if (res.ok) {
-        setSuccessMsg(`Template '${formName}' saved successfully.`)
-        setShowEditorModal(false)
-        fetchTemplates()
-      } else {
-        const err = await res.json()
-        setErrorMsg(err.detail || 'Failed to save template. Please check syntax.')
+  // Trigger live preview whenever selectedTemplateId or previewEmployeeId changes
+  useEffect(() => {
+    if (selectedTemplateId) {
+      const active = templates.find((t) => t.id === selectedTemplateId)
+      if (active) {
+        triggerPreview(active.subject, active.body)
       }
-    } catch (e: any) {
-      setErrorMsg(e.message)
     }
-  }
-
-  async function handleDuplicate(tmpl: EmailTemplate) {
-    try {
-      const res = await fetch(`${API_URL}/api/templates/${tmpl.id}/duplicate`, { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setSuccessMsg(`Duplicated: Created '${data.template_name}'`)
-        fetchTemplates()
-      } else {
-        const err = await res.json()
-        setErrorMsg(err.detail || 'Could not duplicate template')
-      }
-    } catch (e: any) {
-      setErrorMsg(e.message)
-    }
-  }
-
-  async function handleDelete() {
-    if (!currentTemplate) return
-    try {
-      const res = await fetch(`${API_URL}/api/templates/${currentTemplate.id}`, { method: 'DELETE' })
-      if (res.ok) {
-        setSuccessMsg(`Template '${currentTemplate.template_name}' removed.`)
-        setShowDeleteModal(false)
-        setCurrentTemplate(null)
-        fetchTemplates()
-      } else {
-        const err = await res.json()
-        setErrorMsg(err.detail || 'Error deleting template')
-      }
-    } catch (e: any) {
-      setErrorMsg(e.message)
-    }
-  }
+  }, [selectedTemplateId, previewEmployeeId, templates])
 
   async function triggerPreview(subjectToTest?: string, bodyToTest?: string) {
     setPreviewLoading(true)
     setPreviewResult(null)
 
-    const subj = subjectToTest !== undefined ? subjectToTest : (currentTemplate ? currentTemplate.subject : formSubject)
-    const bod = bodyToTest !== undefined ? bodyToTest : (currentTemplate ? currentTemplate.body : formBody)
+    const active = templates.find((t) => t.id === selectedTemplateId)
+    const subj = subjectToTest !== undefined ? subjectToTest : (active ? active.subject : formSubject)
+    const bod = bodyToTest !== undefined ? bodyToTest : (active ? active.body : formBody)
 
     try {
       const res = await fetch(`${API_URL}/api/templates/preview`, {
@@ -304,449 +243,622 @@ export default function TemplateManagementPage() {
     }
   }
 
-  function openPreviewForTemplate(tmpl: EmailTemplate) {
-    setCurrentTemplate(tmpl)
-    setShowPreviewModal(true)
-    triggerPreview(tmpl.subject, tmpl.body)
+  function openCreateModal() {
+    setCurrentTemplate(null)
+    setFormName('')
+    setFormCategory('General Announcement')
+    setFormSubject('Notification: {{ event_name }}')
+    setFormBody(
+      '<div style="font-family: Inter, system-ui, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px;">\n' +
+      '  <h2 style="color: #0f172a; margin-top: 0;">Hello {{ name }},</h2>\n' +
+      '  <p>This is an automated notification regarding <strong>{{ event_name }}</strong> scheduled for <strong>{{ event_date }}</strong> at <strong>{{ event_time }}</strong>.</p>\n' +
+      '  <p>Location / Venue: {{ event_location }}</p>\n' +
+      '  <div style="margin: 24px 0;">\n' +
+      '    <a href="{{ meeting_link }}" style="background: #4f46e5; color: #ffffff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block;">Access Session</a>\n' +
+      '  </div>\n' +
+      '  <p style="color: #64748b; font-size: 14px;">Best regards,<br><strong style="color: #1e293b;">{{ sender_name }}</strong><br>{{ sender_department }} &bull; {{ company_name }}</p>\n' +
+      '</div>'
+    )
+    setShowEditorModal(true)
   }
 
-  function insertVariable(tag: string) {
-    if (activeTargetField === 'subject') {
-      setFormSubject(prev => prev + ' ' + tag)
-    } else {
-      setFormBody(prev => prev + '\n' + tag)
+  function openEditModal(tmpl: EmailTemplate) {
+    setCurrentTemplate(tmpl)
+    setFormName(tmpl.template_name)
+    setFormCategory(tmpl.category)
+    setFormSubject(tmpl.subject)
+    setFormBody(tmpl.body)
+    setShowEditorModal(true)
+  }
+
+  function openDeleteModal(tmpl: EmailTemplate) {
+    setCurrentTemplate(tmpl)
+    setShowDeleteModal(true)
+  }
+
+  async function handleSaveTemplate(e: React.FormEvent) {
+    e.preventDefault()
+    setErrorMsg('')
+    setSuccessMsg('')
+
+    const payload = {
+      template_name: formName.trim(),
+      category: formCategory,
+      subject: formSubject.trim(),
+      body: formBody.trim()
+    }
+
+    try {
+      const url = currentTemplate ? `${API_URL}/api/templates/${currentTemplate.id}` : `${API_URL}/api/templates`
+      const method = currentTemplate ? 'PUT' : 'POST'
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (res.ok) {
+        const saved = await res.json()
+        setSuccessMsg(`Template '${formName}' saved successfully.`)
+        setShowEditorModal(false)
+        await fetchTemplates()
+        setSelectedTemplateId(saved.id)
+      } else {
+        const err = await res.json()
+        setErrorMsg(err.detail || 'Failed to save template. Please check syntax.')
+      }
+    } catch (e: any) {
+      setErrorMsg(e.message)
     }
   }
 
+  async function handleDuplicate(tmpl: EmailTemplate) {
+    try {
+      const res = await fetch(`${API_URL}/api/templates/${tmpl.id}/duplicate`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setSuccessMsg(`Duplicated: Created '${data.template_name}'`)
+        await fetchTemplates()
+        setSelectedTemplateId(data.id)
+      } else {
+        const err = await res.json()
+        setErrorMsg(err.detail || 'Could not duplicate template')
+      }
+    } catch (e: any) {
+      setErrorMsg(e.message)
+    }
+  }
+
+  async function handleDelete() {
+    if (!currentTemplate) return
+    try {
+      const res = await fetch(`${API_URL}/api/templates/${currentTemplate.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setSuccessMsg(`Template '${currentTemplate.template_name}' removed.`)
+        setShowDeleteModal(false)
+        setCurrentTemplate(null)
+        await fetchTemplates()
+      } else {
+        const err = await res.json()
+        setErrorMsg(err.detail || 'Error deleting template')
+      }
+    } catch (e: any) {
+      setErrorMsg(e.message)
+    }
+  }
+
+  function insertTagIntoForm(tag: string) {
+    if (activeTargetField === 'subject') {
+      setFormSubject((prev) => prev + ' ' + tag)
+    } else {
+      setFormBody((prev) => prev + '\n' + tag)
+    }
+  }
+
+  const activeTemplate = templates.find((t) => t.id === selectedTemplateId)
+
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#0f172a' }}>
-      
-      {/* Top Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, borderBottom: '1px solid #e2e8f0', paddingBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
-            <a href="/" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Home</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/employees" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Workforce</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Templates</span>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/campaigns" style={{ color: '#64748b', textDecoration: 'none', fontSize: 13 }}>Campaigns</a>
-            <span style={{ color: '#cbd5e1' }}>/</span>
-            <a href="/analytics" style={{ color: '#2563eb', textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>Analytics &rarr;</a>
-          </div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#0f172a' }}>Email Template Studio</h1>
-          <p style={{ color: '#64748b', margin: '4px 0 0 0', fontSize: 14 }}>
-            Design, personalize, and preview reusable notification templates with Jinja2 sandboxing
-          </p>
-        </div>
-
-        <button
+    <AppLayout
+      title="Template Studio & Jinja2 Previews"
+      subtitle="Author, personalize, and test HTML email templates with sandboxed Jinja2 variable rendering"
+      actions={
+        <Button
+          variant="primary"
+          icon={<Plus className="w-4 h-4" />}
           onClick={openCreateModal}
-          style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '10px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
         >
-          + Create New Template
-        </button>
-      </header>
-
-      {/* Notices */}
+          New Template
+        </Button>
+      }
+    >
+      {/* Alert Messages */}
       {successMsg && (
-        <div style={{ padding: '12px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, marginBottom: 20, color: '#166534', fontSize: 13 }}>
-          {successMsg}
+        <div className="mb-6 p-4 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-sm flex items-center justify-between shadow-sm animate-fade-in">
+          <div className="flex items-center space-x-2">
+            <CheckCircle2 className="w-5 h-5 text-teal-600 flex-shrink-0" />
+            <span className="font-medium">{successMsg}</span>
+          </div>
+          <button onClick={() => setSuccessMsg('')} className="text-teal-600 hover:text-teal-800 text-xs font-semibold">
+            Dismiss
+          </button>
         </div>
       )}
+
       {errorMsg && (
-        <div style={{ padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, marginBottom: 20, color: '#991b1b', fontSize: 13 }}>
-          {errorMsg}
+        <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-center justify-between shadow-sm animate-fade-in">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <span className="font-medium">{errorMsg}</span>
+          </div>
+          <button onClick={() => setErrorMsg('')} className="text-rose-600 hover:text-rose-800 text-xs font-semibold">
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Metric Bar */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Total Active Templates</span>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#0f172a', marginTop: 4 }}>{templates.length}</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase' }}>Supported Variables</span>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#2563eb', marginTop: 4 }}>15</div>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '16px 20px' }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#059669', textTransform: 'uppercase' }}>Security Engine</span>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#059669', marginTop: 8 }}>Jinja2 Sandboxed</div>
-        </div>
-      </section>
-
-      {/* Search & Category Pills */}
-      <section style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input
-          type="text"
-          placeholder="Search templates by title or subject..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ flex: 1, minWidth: 260, padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <KPICard
+          title="Total Templates"
+          value={templates.length}
+          icon={FileText}
+          trendText="Catalog size in database"
+          trendUp={true}
+          accentColor="indigo"
+          loading={loading}
         />
-
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          style={{ padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, background: '#fff' }}
-        >
-          {CATEGORIES.map(c => (
-            <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>
-          ))}
-        </select>
-      </section>
-
-      {/* Templates Table */}
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Template Title</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Category</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Default Subject Line</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569' }}>Last Updated</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, color: '#475569', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={5} style={{ padding: 32, textAlign: 'center', color: '#64748b' }}>
-                  Loading templates...
-                </td>
-              </tr>
-            ) : templates.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ padding: 36, textAlign: 'center', color: '#94a3b8' }}>
-                  No email templates found matching your search.
-                </td>
-              </tr>
-            ) : (
-              templates.map((t) => (
-                <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px 16px', fontWeight: 600, color: '#0f172a' }}>
-                    {t.template_name}
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ display: 'inline-block', padding: '2px 8px', background: '#f1f5f9', color: '#334155', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
-                      {t.category}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: '#475569', maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <code>{t.subject}</code>
-                  </td>
-                  <td style={{ padding: '12px 16px', color: '#64748b', fontSize: 12 }}>
-                    {t.updated_at ? new Date(t.updated_at).toLocaleDateString() : 'N/A'}
-                  </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button
-                      onClick={() => openPreviewForTemplate(t)}
-                      style={{ background: 'none', border: 'none', color: '#059669', cursor: 'pointer', fontWeight: 600, marginRight: 12, fontSize: 12 }}
-                    >
-                      Preview
-                    </button>
-                    <button
-                      onClick={() => openEditModal(t)}
-                      style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 600, marginRight: 12, fontSize: 12 }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDuplicate(t)}
-                      style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontWeight: 600, marginRight: 12, fontSize: 12 }}
-                    >
-                      Duplicate
-                    </button>
-                    <button
-                      onClick={() => openDeleteModal(t)}
-                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 600, fontSize: 12 }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <KPICard
+          title="Template Categories"
+          value={new Set(templates.map((t) => t.category)).size}
+          icon={Layers}
+          trendText="Organizational segments"
+          trendUp={true}
+          accentColor="teal"
+          loading={loading}
+        />
+        <KPICard
+          title="Variables Supported"
+          value={VARIABLE_PANEL.reduce((acc, g) => acc + g.vars.length, 0)}
+          icon={Variable}
+          trendText="Sandboxed Jinja2 tags"
+          trendUp={true}
+          accentColor="purple"
+          loading={loading}
+        />
+        <KPICard
+          title="Active Preview Recipient"
+          value={employees.length}
+          icon={Sparkles}
+          trendText="Available test personas"
+          trendUp={true}
+          accentColor="blue"
+          loading={loading}
+        />
       </div>
 
-      {/* TEMPLATE EDITOR MODAL */}
-      {showEditorModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 28, maxWidth: 960, width: '100%', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-                {currentTemplate ? `Edit Template: ${currentTemplate.template_name}` : 'Create New Email Template'}
-              </h2>
-              <button onClick={() => setShowEditorModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>&times;</button>
+      {/* Main Split-Screen Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column: Template Catalog & Filter */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+                <FileText className="w-4 h-4 text-indigo-600" />
+                <span>Template Library</span>
+              </h3>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                {templates.length} items
+              </span>
             </div>
 
-            <form onSubmit={handleSaveTemplate} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Template Name *</label>
-                  <input
-                    required
-                    placeholder="e.g. Quarterly Appraisal Notification"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                  />
-                </div>
+            <SearchInput
+              value={searchTerm}
+              onChange={(e: any) => setSearchTerm(typeof e === 'string' ? e : e.target.value)}
+              onClear={() => setSearchTerm('')}
+              placeholder="Search by template name or subject..."
+            />
 
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Category *</label>
-                  <select
-                    value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, background: '#fff', boxSizing: 'border-box' }}
-                  >
-                    {CATEGORIES.filter(c => c !== 'All').map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Subject Line Template *
-                  <span style={{ fontSize: 11, fontWeight: 400, color: '#64748b', marginLeft: 8 }}>(Supports variable tags)</span>
-                </label>
-                <input
-                  required
-                  placeholder="e.g. Action Required: {{ event_name }} - {{ name }}"
-                  value={formSubject}
-                  onFocus={() => setActiveTargetField('subject')}
-                  onChange={(e) => setFormSubject(e.target.value)}
-                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-
-              {/* Variable Reference Insert Panel */}
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '12px 14px' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#475569', letterSpacing: 0.5 }}>
-                  Click to Insert Personalization Tag into Active Field ({activeTargetField === 'subject' ? 'Subject' : 'Body'}):
-                </span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                  {VARIABLE_PANEL.map(group => (
-                    <div key={group.group} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', minWidth: 120 }}>{group.group}:</span>
-                      {group.vars.map(v => (
-                        <button
-                          key={v.tag}
-                          type="button"
-                          onClick={() => insertVariable(v.tag)}
-                          style={{
-                            background: '#fff',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: 4,
-                            padding: '3px 8px',
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                            cursor: 'pointer',
-                            color: '#1e40af'
-                          }}
-                          title={`Inserts ${v.tag} (${v.label})`}
-                        >
-                          + {v.tag}
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Email Body Template (HTML / Jinja2) *
-                </label>
-                <textarea
-                  required
-                  rows={10}
-                  onFocus={() => setActiveTargetField('body')}
-                  value={formBody}
-                  onChange={(e) => setFormBody(e.target.value)}
-                  style={{ width: '100%', padding: '10px', fontFamily: 'monospace', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 4, boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPreviewModal(true)
-                    triggerPreview(formSubject, formBody)
-                  }}
-                  style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: 4, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
-                >
-                  Test &amp; Preview
-                </button>
-
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowEditorModal(false)}
-                    style={{ background: '#f1f5f9', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    style={{ background: '#2563eb', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: 4, cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
-                  >
-                    Save Template
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* LIVE PREVIEW MODAL */}
-      {showPreviewModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 20 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 28, maxWidth: 840, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 12, marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Real-Time Email Render Preview</h2>
-              <button onClick={() => setShowPreviewModal(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>&times;</button>
-            </div>
-
-            {/* Recipient context selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, background: '#f8fafc', padding: '10px 14px', borderRadius: 6 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Preview with Employee:</label>
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 block mb-1.5">
+                Category Filter
+              </label>
               <select
-                value={previewEmployeeId || ''}
-                onChange={(e) => {
-                  const eid = Number(e.target.value)
-                  setPreviewEmployeeId(eid)
-                  triggerPreview()
-                }}
-                style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff' }}
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                aria-label="Filter templates by category"
+                className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-3.5 py-2.5 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               >
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.full_name} ({emp.employee_id} - {emp.department})
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
                   </option>
                 ))}
               </select>
-
-              <button
-                onClick={() => triggerPreview()}
-                style={{ background: '#0f172a', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}
-              >
-                Re-render
-              </button>
             </div>
 
-            {/* Validation Notice */}
+            {/* List of Templates */}
+            <div className="divide-y divide-slate-100 max-h-[520px] overflow-y-auto pr-1">
+              {templates.length === 0 ? (
+                <div className="py-8 text-center text-sm text-slate-400">
+                  No templates found matching your search.
+                </div>
+              ) : (
+                templates.map((tmpl) => {
+                  const isSelected = tmpl.id === selectedTemplateId
+                  return (
+                    <div
+                      key={tmpl.id}
+                      onClick={() => setSelectedTemplateId(tmpl.id)}
+                      className={`p-3.5 rounded-xl transition-all cursor-pointer mb-1.5 ${
+                        isSelected
+                          ? 'bg-indigo-50/80 border border-indigo-200 shadow-sm'
+                          : 'hover:bg-slate-50 border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className={`font-semibold text-sm ${isSelected ? 'text-indigo-950' : 'text-slate-900'}`}>
+                            {tmpl.template_name}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Subject: {tmpl.subject}
+                          </p>
+                          <div className="flex items-center space-x-2 mt-2">
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600">
+                              {tmpl.category}
+                            </span>
+                            <span className="text-[11px] font-mono text-slate-400">
+                              ID: #{tmpl.id}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            title="Edit template"
+                            onClick={() => openEditModal(tmpl)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-white transition-colors"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            title="Duplicate template"
+                            onClick={() => handleDuplicate(tmpl)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-white transition-colors"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            title="Delete template"
+                            onClick={() => openDeleteModal(tmpl)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Live Sandboxed Jinja2 Preview Studio */}
+        <div className="lg:col-span-7 space-y-6">
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 border-b border-slate-100 gap-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-lg flex items-center space-x-2">
+                  <Sparkles className="w-5 h-5 text-indigo-600" />
+                  <span>Jinja2 Live Preview Studio</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time sandboxed rendering with real recipient context
+                </p>
+              </div>
+
+              {/* Employee Persona Picker */}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+                  Persona:
+                </span>
+                <select
+                  value={previewEmployeeId}
+                  onChange={(e) => setPreviewEmployeeId(Number(e.target.value))}
+                  aria-label="Select recipient persona"
+                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                >
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.full_name} ({emp.employee_id} - {emp.department})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Validation Banner if missing variables or errors */}
             {previewResult && !previewResult.is_valid && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '10px 14px', color: '#991b1b', fontSize: 13, marginBottom: 16 }}>
-                <strong>Validation Error:</strong> {previewResult.validation_error}
+              <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
+                <div className="flex items-center space-x-2 font-bold text-amber-800">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>Jinja2 Variable Notice</span>
+                </div>
+                {previewResult.missing_variables && previewResult.missing_variables.length > 0 && (
+                  <p>
+                    Undefined / missing context variable(s):{' '}
+                    <span className="font-mono font-semibold">
+                      {previewResult.missing_variables.join(', ')}
+                    </span>
+                  </p>
+                )}
+                {previewResult.validation_error && (
+                  <p className="font-mono text-amber-700">{previewResult.validation_error}</p>
+                )}
               </div>
             )}
 
-            {/* Subject Banner */}
-            {previewResult && (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 14px', background: '#f8fafc', marginBottom: 16 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>SUBJECT LINE:</span>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', marginTop: 2 }}>{previewResult.rendered_subject}</div>
+            {/* Rendered Subject Header */}
+            <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="font-semibold uppercase tracking-wider">Subject Preview:</span>
+                <span className="font-mono text-[11px] text-slate-400">
+                  {previewResult?.variables_used?.length || 0} variables substituted
+                </span>
               </div>
-            )}
-
-            {/* Dual Tabs: HTML vs Plain Text */}
-            <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 12 }}>
-              <button
-                onClick={() => setPreviewTab('html')}
-                style={{
-                  padding: '8px 14px',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: previewTab === 'html' ? '2px solid #2563eb' : '2px solid transparent',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  color: previewTab === 'html' ? '#2563eb' : '#64748b',
-                  cursor: 'pointer'
-                }}
-              >
-                Rendered HTML Output
-              </button>
-              <button
-                onClick={() => setPreviewTab('text')}
-                style={{
-                  padding: '8px 14px',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: previewTab === 'text' ? '2px solid #2563eb' : '2px solid transparent',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  color: previewTab === 'text' ? '#2563eb' : '#64748b',
-                  cursor: 'pointer'
-                }}
-              >
-                Plain-Text Fallback
-              </button>
+              <p className="text-base font-bold text-slate-900">
+                {previewResult ? previewResult.rendered_subject : activeTemplate?.subject || '—'}
+              </p>
             </div>
 
-            {previewLoading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Rendering template...</div>
-            ) : previewResult ? (
-              previewTab === 'html' ? (
+            {/* View Mode Tabs (HTML / Plain Text) */}
+            <div className="flex items-center justify-between mt-5 mb-3">
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setPreviewTab('html')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    previewTab === 'html'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  HTML Preview
+                </button>
+                <button
+                  onClick={() => setPreviewTab('text')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    previewTab === 'text'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Plain-Text Fallback
+                </button>
+              </div>
+
+              {activeTemplate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Edit className="w-3.5 h-3.5" />}
+                  onClick={() => openEditModal(activeTemplate)}
+                >
+                  Edit Template
+                </Button>
+              )}
+            </div>
+
+            {/* Sandboxed Iframe Container */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-inner min-h-[380px] relative">
+              {previewLoading && (
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-xs flex items-center justify-center z-10">
+                  <div className="flex items-center space-x-2 text-indigo-600 font-medium text-xs">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Rendering template...</span>
+                  </div>
+                </div>
+              )}
+
+              {previewTab === 'html' ? (
                 <iframe
-                  title="HTML Email Preview"
+                  title="Template HTML Preview"
                   sandbox=""
-                  srcDoc={previewResult.rendered_html}
-                  style={{ border: '1px solid #e2e8f0', borderRadius: 6, width: '100%', minHeight: 280, background: '#fff' }}
+                  srcDoc={previewResult ? previewResult.rendered_html : activeTemplate?.body || ''}
+                  className="w-full h-[420px] border-0"
                 />
               ) : (
-                <pre style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 16, background: '#f8fafc', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12, color: '#334155', minHeight: 200 }}>
-                  {previewResult.plain_text_fallback}
+                <pre className="p-4 text-xs font-mono text-slate-700 whitespace-pre-wrap h-[420px] overflow-y-auto bg-slate-50/50">
+                  {previewResult ? previewResult.plain_text_fallback : 'No plain text representation available.'}
                 </pre>
-              )
-            ) : null}
+              )}
+            </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-              <button
-                onClick={() => setShowPreviewModal(false)}
-                style={{ background: '#0f172a', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-              >
-                Close Preview
-              </button>
+            {/* Available Tags Catalog */}
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center space-x-1.5">
+                <Tag className="w-3.5 h-3.5 text-slate-400" />
+                <span>Available Personalization Variables</span>
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {VARIABLE_PANEL.map((group) => (
+                  <div key={group.group} className="bg-slate-50/70 rounded-xl p-3 border border-slate-200/60">
+                    <p className="text-[11px] font-bold text-slate-700 mb-2">{group.group}</p>
+                    <div className="space-y-1">
+                      {group.vars.map((v) => (
+                        <div key={v.tag} className="flex items-center justify-between text-xs">
+                          <code className="font-mono text-[11px] text-indigo-600 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                            {v.tag}
+                          </code>
+                          <span className="text-[11px] text-slate-500">{v.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* DELETE CONFIRMATION MODAL */}
-      {showDeleteModal && currentTemplate && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
-          <div style={{ background: '#fff', borderRadius: 8, padding: 24, maxWidth: 440, width: '90%' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: 16, color: '#991b1b' }}>Delete Email Template?</h3>
-            <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Are you sure you want to permanently delete template <strong>{currentTemplate.template_name}</strong>? Templates currently linked to campaigns cannot be deleted.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                style={{ background: '#f1f5f9', border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
+      {/* Template Editor Modal */}
+      <Modal
+        isOpen={showEditorModal}
+        onClose={() => setShowEditorModal(false)}
+        title={currentTemplate ? `Edit Template: ${currentTemplate.template_name}` : 'Create New Email Template'}
+        subtitle="Configure Jinja2 template content, category, and subject format"
+        size="2xl"
+      >
+        <form onSubmit={handleSaveTemplate} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-600 block mb-1.5">
+                Template Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="e.g. Q4 Performance Appraisal"
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-600 block mb-1.5">
+                Category *
+              </label>
+              <select
+                value={formCategory}
+                onChange={(e) => setFormCategory(e.target.value)}
+                aria-label="Select template category"
+                className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl px-3.5 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
-              >
-                Delete
-              </button>
+                {CATEGORIES.filter((c) => c !== 'All').map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        </div>
-      )}
 
-    </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+                Email Subject Line *
+              </label>
+              <button
+                type="button"
+                onClick={() => setActiveTargetField('subject')}
+                className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                  activeTargetField === 'subject'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Insert Tags Here
+              </button>
+            </div>
+            <input
+              type="text"
+              required
+              value={formSubject}
+              onFocus={() => setActiveTargetField('subject')}
+              onChange={(e) => setFormSubject(e.target.value)}
+              placeholder="e.g. Reminder: {{ event_name }} for {{ name }}"
+              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl px-3.5 py-2.5 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+                Email HTML Body *
+              </label>
+              <button
+                type="button"
+                onClick={() => setActiveTargetField('body')}
+                className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                  activeTargetField === 'body'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Insert Tags Here
+              </button>
+            </div>
+            <textarea
+              required
+              rows={12}
+              value={formBody}
+              onFocus={() => setActiveTargetField('body')}
+              onChange={(e) => setFormBody(e.target.value)}
+              placeholder="Enter HTML and Jinja2 markup here..."
+              className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs font-mono rounded-xl p-3.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none leading-relaxed"
+            />
+          </div>
+
+          {/* Quick Insert Variables Toolbar */}
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <span className="text-[11px] font-bold text-slate-500 block mb-2">
+              Click to insert tag into {activeTargetField}:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {['{{ name }}', '{{ email }}', '{{ department }}', '{{ event_name }}', '{{ event_date }}', '{{ event_time }}', '{{ meeting_link }}', '{{ sender_name }}', '{{ company_name }}'].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => insertTagIntoForm(tag)}
+                  className="px-2 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-slate-200 rounded text-xs font-mono font-medium transition-colors"
+                >
+                  + {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200">
+            <Button variant="ghost" type="button" onClick={() => setShowEditorModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit">
+              {currentTemplate ? 'Save Template Changes' : 'Create Template'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        title="Delete Template"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Are you sure you want to permanently delete template{' '}
+            <strong className="text-slate-900 font-semibold">
+              &quot;{currentTemplate?.template_name}&quot;
+            </strong>?
+            This operation cannot be undone.
+          </p>
+
+          <div className="flex items-center justify-end space-x-3 pt-4 border-t border-slate-200">
+            <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDelete}>
+              Confirm Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </AppLayout>
   )
 }
